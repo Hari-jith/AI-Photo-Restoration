@@ -1,0 +1,14 @@
+# Base packages for the AI Old Photo Restoration project.
+# PyTorch (torch, torchvision) is NOT listed here: it is installed
+# separately because the command differs for CPU vs NVIDIA GPU.
+# Install with:  pip install -r requirements.txt
+
+# numpy is pinned below version 2: the older research libraries we add
+# later (basicsr, gfpgan, realesrgan) are not reliably compatible with numpy 2.
+numpy==1.26.4
+
+# Image loading and saving
+Pillow==10.4.0
+
+# Classical computer vision (denoising, inpainting, colour conversion)
+opencv-python==4.10.0.84
