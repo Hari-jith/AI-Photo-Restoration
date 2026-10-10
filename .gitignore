@@ -1,0 +1,52 @@
+# ---------- Python virtual environment ----------
+.venv/
+venv/
+env/
+
+# ---------- Python cache and build files ----------
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+build/
+dist/
+
+# ---------- Model weights (large files, downloaded by script) ----------
+# Everything inside models/ is ignored. Weights are not source code.
+models/*
+# Safety net: ignore weight files wherever they end up
+*.pth
+*.pt
+*.onnx
+*.caffemodel
+*.ckpt
+*.safetensors
+
+# ---------- Generated and uploaded images ----------
+outputs/
+uploads/
+temp/
+tmp/
+
+# ---------- Secrets ----------
+# Real settings/secrets stay local. The template .env.example IS tracked.
+.env
+.env.*
+!.env.example
+
+# ---------- Logs ----------
+*.log
+logs/
+
+# ---------- Testing and notebook caches ----------
+.pytest_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# ---------- Editor and OS files ----------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
