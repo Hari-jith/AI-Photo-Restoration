@@ -1,14 +1,40 @@
-# Base packages for the AI Old Photo Restoration project.
-# PyTorch (torch, torchvision) is NOT listed here: it is installed
-# separately because the command differs for CPU vs NVIDIA GPU.
-# Install with:  pip install -r requirements.txt
+# AI Old Photo Restoration & Colorization
+# Python dependencies. STATUS: work in progress, complete through Module 10.
+#
+# Tested with Python 3.11 on Windows. Use a virtual environment:
+#     py -3.11 -m venv .venv
+#     .venv\Scripts\Activate.ps1
+#
+# STEP 1: install PyTorch FIRST (not listed below, because the command
+# differs for CPU-only and NVIDIA GPU computers). Pick ONE:
+#
+#   CPU only:
+#     pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cpu
+#
+#   NVIDIA GPU (CUDA 12.1):
+#     pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
+#
+# STEP 2: install everything below with:
+#     pip install -r requirements.txt
+#
+# Notes
+#  * torch is used from Module 7 (device.py) and Module 9 (DDColor).
+#  * torchvision is not imported by our code yet. It is installed now and
+#    pinned to 0.16.x because the face-restoration and super-resolution
+#    libraries added in Modules 11-12 (via basicsr) break with newer versions.
+#  * DDColor has an OPTIONAL dependency on "timm" and falls back to its own
+#    code when timm is missing, so timm is deliberately not installed.
+#  * Packages for later modules (fastapi, uvicorn, python-multipart, pytest,
+#    httpx, gfpgan, realesrgan, basicsr, facexlib) are added only when the
+#    module that needs them is built.
 
-# numpy is pinned below version 2: the older research libraries we add
-# later (basicsr, gfpgan, realesrgan) are not reliably compatible with numpy 2.
+# numpy is pinned below version 2: the research libraries added later
+# (basicsr, gfpgan, realesrgan) are not reliably compatible with numpy 2.
 numpy==1.26.4
 
 # Image loading and saving
 Pillow==10.4.0
 
-# Classical computer vision (denoising, inpainting, colour conversion)
+# Classical computer vision (denoising, inpainting, colour conversion) and the
+# neural-network engine used by the backup colorizer (cv2.dnn)
 opencv-python==4.10.0.84
