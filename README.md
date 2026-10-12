@@ -6,7 +6,6 @@
 > colorization). Sections marked *Planned* do not exist yet. This file is
 > updated as modules are added.
 >
-> Last updated: October 2026
 
 A locally-run, zero-cost tool that restores old photographs with open-source
 models: it will clean damage, restore faces, colorize black-and-white photos
