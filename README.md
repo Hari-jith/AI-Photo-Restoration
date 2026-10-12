@@ -155,6 +155,8 @@ Rough memory use: loading DDColor needs about 2-3 GB of RAM at its peak. The
 GPU code path is implemented but has **not yet been tested on real GPU
 hardware** (development so far used a CPU-only machine).
 
+Measured on one CPU-only Windows machine: DDColor loads in about 14-16 s and colorizes a 459x668 photo in about 10 s. Your timings will vary.
+
 ---
 
 ## 6. Installation
