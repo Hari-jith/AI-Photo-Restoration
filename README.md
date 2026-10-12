@@ -53,8 +53,8 @@ at a time, with the reasoning for each decision kept in the code comments.
 | 6 | Preprocessing (`src/preprocessing.py`) | Done |
 | 7 | Device manager and weights downloader (`src/device.py`, `scripts/download_weights.py`) | Done |
 | 8 | Classical restoration: denoise and scratch repair (`src/classical_restore.py`) | Done |
-| 9 | Colorization with DDColor (`src/colorize.py`) | Done (code and self-test); real-photo quality not yet evaluated |
-| 10 | Backup colorizer and fallback chain (`src/colorize_backup.py`) | Done (code and self-test); real-weights run not yet confirmed |
+| 9 | Colorization with DDColor (`src/colorize.py`) | Done and confirmed with the real weights. Outputs look plausible on a test photo; no quantitative evaluation yet |
+| 10 | Backup colorizer and fallback chain (`src/colorize_backup.py`) | Done. Fallback chain confirmed with DDColor as primary; backup weights run: pending |
 | 11-25 | Face restoration, super-resolution, pipeline, evaluation, website, tests, packaging | **Planned** (see [Roadmap](#15-roadmap)) |
 
 **Not measured yet:** there are no quality benchmarks, no PSNR/SSIM results and
