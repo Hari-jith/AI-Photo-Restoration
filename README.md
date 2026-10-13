@@ -54,6 +54,7 @@ at a time, with the reasoning for each decision kept in the code comments.
 | 8 | Classical restoration: denoise and scratch repair (`src/classical_restore.py`) | Done |
 | 9 | Colorization with DDColor (`src/colorize.py`) | Done and confirmed with the real weights. Outputs look plausible on a test photo; no quantitative evaluation yet |
 | 10 | Backup colorizer and fallback chain (`src/colorize_backup.py`) | Done. Fallback chain confirmed with DDColor as primary; backup weights run: pending |
+| 11 | Face restoration with GFPGAN v1.4 (src/face_restore.py) | Done; tested on one real photo |
 | 11-25 | Face restoration, super-resolution, pipeline, evaluation, website, tests, packaging | **Planned** (see [Roadmap](#15-roadmap)) |
 
 **Not measured yet:** there are no quality benchmarks, no PSNR/SSIM results and
@@ -393,8 +394,7 @@ Planned additions: `src/face_restore.py`, `src/super_resolution.py`,
 |---|---|---|---|
 | [DDColor](https://github.com/piddnad/DDColor) (ICCV 2023) | Main colorizer | Apache 2.0 | Weights hosted by the authors on ModelScope. The weights' own license was **not independently verified**; check the ModelScope model page before redistributing. |
 | [Colorful Image Colorization](https://github.com/richzhang/colorization) (Zhang et al., ECCV 2016) | Backup colorizer | BSD 2-Clause | Weights trained on ImageNet; check ImageNet terms for your use case. |
-| GFPGAN v1.4 | Face restoration *(planned)* | Apache 2.0 | License to be re-verified when integrated |
-| Real-ESRGAN | Super-resolution *(planned)* | BSD 3-Clause | License to be re-verified when integrated |
+GFPGAN v1.4 | Face restoration | Apache 2.0 headline, but its LICENSE lists third-party components under non-commercial terms (NVIDIA StyleGAN2, CC BY-NC-SA DFDNet) | Treat as non-commercial. Its code is not committed to this repo; run scripts/setup_face_code.py.| Real-ESRGAN | Super-resolution *(planned)* | BSD 3-Clause | License to be re-verified when integrated |
 | facexlib | Face detection *(planned)* | MIT | License to be re-verified when integrated |
 | OpenCV, Pillow, NumPy, PyTorch | Libraries | Their respective open-source licenses | |
 
