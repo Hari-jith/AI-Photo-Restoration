@@ -1,7 +1,7 @@
 # AI Old Photo Restoration & Colorization
 
 > **Work in progress.** This README describes the project as built through
-> **Module 10 of 25**. There is **no website yet**. What exists today is a
+> **Module 13 of 25**. There is **no website yet**. What exists today is a
 > tested set of command-line building blocks (loading, analysis, cleanup,
 > colorization). Sections marked *Planned* do not exist yet. This file is
 > updated as modules are added.
