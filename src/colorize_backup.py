@@ -1,30 +1,31 @@
 """
 colorize_backup.py
 
-A second, independent colorizer (Zhang, Isola & Efros, ECCV 2016, run with
-OpenCV's built-in neural-network engine) plus the fallback logic that uses it
-when DDColor is unavailable.
+A second, independent colorizer (Zhang, Isola & Efros, SIGGRAPH 2017) plus the
+fallback logic that uses it when DDColor is unavailable.
 
     from src.colorize_backup import ColorizerChain
 
     chain = ColorizerChain()                      # DDColor first, backup second
     result = chain.colorize(gray_image)
     result.image          # colourized Pillow image
-    result.method         # "ddcolor" or "opencv_zhang"
+    result.method         # "ddcolor" or "siggraph17"
     result.notes          # plain-English remarks, e.g. why the backup was used
 
 Why have a backup?
-  * It needs no PyTorch and no extra Python packages (only OpenCV).
-  * It is small (about 120 MB) and fast on a CPU.
+  * It is much smaller (about 130 MB) and faster than DDColor.
   * If DDColor fails to load or runs out of memory, the website still works.
+  * It ALWAYS runs on the CPU: when DDColor fails because the graphics card
+    ran out of memory, the backup must not compete for that memory.
 Its colours are usually MORE MUTED and less accurate than DDColor's, and it
-looks at the photo at only 224 x 224 pixels. It is a safety net, not an equal.
+looks at the photo at only 256 x 256 pixels. It is a safety net, not an equal.
 
-Files (downloaded by scripts/download_weights.py into models/colorizer_backup/):
-  colorization_deploy_v2.prototxt   network description   (GitHub, BSD-2)
-  pts_in_hull.npy                   the 313 colour bins    (GitHub, BSD-2)
-  colorization_release_v2.caffemodel the trained weights   (official Berkeley server)
-Source: https://github.com/richzhang/colorization
+History: this module first used the authors' 2016 Caffe model, whose download
+address now answers "404 Not Found". It now uses the authors' current PyTorch
+SIGGRAPH 2017 model, hosted by them on S3.
+
+Set-up (once):   python scripts\\setup_backup_colorizer.py
+Source: https://github.com/richzhang/colorization   (BSD 2-Clause)
 
 Self-test (no weights needed):   python -m src.colorize_backup
 Backup colorizer on a file:      python -m src.colorize_backup outputs\\preview_gray.png
@@ -42,81 +43,65 @@ from unittest import mock
 
 import cv2
 import numpy as np
+import torch
+import torch.nn.functional as F
 from PIL import Image
 
 from src import config
 from src.colorize import (MAX_SATURATION, MIN_SATURATION, ColorizationError,
-                          Colorizer, ModelWeightsMissingError)
+                          Colorizer, load_weights_into)
 from src.logging_setup import get_logger
 
 logger = get_logger(__name__)
 
 # --- Settings ----------------------------------------------------------------
 BACKUP_DIR = config.MODELS_DIR / "colorizer_backup"
-PROTOTXT_PATH = BACKUP_DIR / "colorization_deploy_v2.prototxt"
-CLUSTER_CENTRES_PATH = BACKUP_DIR / "pts_in_hull.npy"
-CAFFEMODEL_PATH = BACKUP_DIR / "colorization_release_v2.caffemodel"
-
-INPUT_SIZE = 224            # the network always looks at 224 x 224 pixels
-LIGHTNESS_OFFSET = 50.0     # the network was trained on lightness minus 50
-NUM_COLOUR_BINS = 313       # the network picks among 313 colour "bins"
-REBALANCE_VALUE = 2.606     # colour-boost constant from the authors' demo
+WEIGHTS_PATH = BACKUP_DIR / "siggraph17-df00044c.pth"
+INPUT_SIZE = 256            # the network looks at a 256 x 256 copy of the photo
 
 METHOD_DDCOLOR = "ddcolor"
-METHOD_BACKUP = "opencv_zhang"
+METHOD_BACKUP = "siggraph17"
 
 
 class BackupWeightsMissingError(ColorizationError):
-    """One or more backup-colorizer files are missing."""
+    """The backup colorizer's weights file is missing."""
 
 
 # ---------------------------------------------------------------------------
-# Loading the OpenCV network
+# Loading the network
 # ---------------------------------------------------------------------------
-def _load_network():
-    """Read the Caffe network with OpenCV and install the two pieces the
-    authors ship separately (the colour bins and a rebalancing constant)."""
-    required = [PROTOTXT_PATH, CLUSTER_CENTRES_PATH, CAFFEMODEL_PATH]
-    missing = [path.name for path in required if not path.is_file()]
-    if missing:
+def _load_model():
+    """Build the SIGGRAPH 2017 network and load the downloaded weights (CPU)."""
+    if not WEIGHTS_PATH.is_file():
         raise BackupWeightsMissingError(
-            f"Backup colorizer files missing: {', '.join(missing)}. Download "
-            "them with:  python scripts\\download_weights.py   (the script "
-            "prints manual steps if an automatic download fails).")
+            f"The backup colorizer weights were not found at {WEIGHTS_PATH}. "
+            "Download them with:  python scripts\\setup_backup_colorizer.py")
     try:
-        network = cv2.dnn.readNetFromCaffe(str(PROTOTXT_PATH), str(CAFFEMODEL_PATH))
-        centres = np.load(CLUSTER_CENTRES_PATH).astype(np.float32)
-        if centres.shape != (NUM_COLOUR_BINS, 2):
-            raise ColorizationError(
-                f"pts_in_hull.npy has shape {centres.shape}, expected "
-                f"({NUM_COLOUR_BINS}, 2). Delete it and download it again.")
-        centres = centres.transpose().reshape(2, NUM_COLOUR_BINS, 1, 1)
-        network.getLayer(network.getLayerId("class8_ab")).blobs = [centres]
-        network.getLayer(network.getLayerId("conv8_313_rh")).blobs = [
-            np.full((1, NUM_COLOUR_BINS), REBALANCE_VALUE, dtype=np.float32)]
-    except cv2.error as error:
+        from src.vendor.siggraph17.siggraph17 import SIGGRAPHGenerator
+    except ImportError as error:
         raise ColorizationError(
-            "OpenCV could not load the backup colorizer files (they may be "
-            "damaged or incomplete: delete the folder models\\colorizer_backup "
-            f"and download again). OpenCV {cv2.__version__} said: "
-            f"{str(error)[:200]}") from error
-    return network
+            "The backup colorizer code is missing. Run this once from the project "
+            f"folder:  python scripts\\setup_backup_colorizer.py  (details: {error})"
+        ) from error
+    model = SIGGRAPHGenerator().eval()
+    # Verifies that the file really fits this network (see colorize.py).
+    load_weights_into(model, WEIGHTS_PATH)
+    return model
 
 
 # ---------------------------------------------------------------------------
 # The backup colorizer
 # ---------------------------------------------------------------------------
 class BackupColorizer:
-    """Colorizes with the Zhang et al. network. Loads lazily on first use."""
+    """Colorizes with the SIGGRAPH 2017 network. Loads lazily on first use."""
 
-    def __init__(self, network=None):
-        """network: an already-loaded network (used by the self-test)."""
-        self._network = network
-        self._lock = threading.Lock()   # the network keeps internal state
+    def __init__(self, model=None):
+        """model: an already-built network (used by the self-test)."""
+        self._model = model
+        self._lock = threading.Lock()   # one image at a time
 
     def weights_available(self) -> bool:
-        return all(p.is_file() for p in
-                   (PROTOTXT_PATH, CLUSTER_CENTRES_PATH, CAFFEMODEL_PATH))
+        return WEIGHTS_PATH.is_file()
 
     def colorize(self, image: Image.Image, saturation: float = 1.0) -> Image.Image:
         """Return a colourized copy (same size, RGB). Same interface as
@@ -125,8 +110,10 @@ class BackupColorizer:
             raise ValueError(
                 f"saturation must be between {MIN_SATURATION} and {MAX_SATURATION}.")
         with self._lock:
-            if self._network is None:
-                self._network = _load_network()
+            if self._model is None:
+                started = time.time()
+                self._model = _load_model()
+                logger.info("Backup colorizer loaded in %.1f s", time.time() - started)
             started = time.time()
             try:
                 result = self._run(image, saturation)
@@ -147,18 +134,21 @@ class BackupColorizer:
         # Lightness of the full-size photo goes back into the result unchanged.
         original_l = cv2.cvtColor(rgb, cv2.COLOR_RGB2Lab)[:, :, 0]
 
-        # Network input: lightness of a 224 x 224 copy, shifted by -50.
-        small = cv2.resize(rgb, (INPUT_SIZE, INPUT_SIZE))
-        small_l = cv2.cvtColor(small, cv2.COLOR_RGB2Lab)[:, :, 0] - LIGHTNESS_OFFSET
-        blob = small_l.reshape(1, 1, INPUT_SIZE, INPUT_SIZE).astype(np.float32)
+        # Network input: lightness (0..100) of a 256 x 256 copy. The network
+        # normalises it itself. Bicubic resizing can overshoot, so clip first.
+        small = np.clip(cv2.resize(rgb, (INPUT_SIZE, INPUT_SIZE),
+                                   interpolation=cv2.INTER_CUBIC), 0.0, 1.0)
+        small_l = cv2.cvtColor(small, cv2.COLOR_RGB2Lab)[:, :, 0]
+        tensor = torch.from_numpy(small_l).float().reshape(1, 1, INPUT_SIZE, INPUT_SIZE)
 
-        self._network.setInput(blob)
-        predicted = self._network.forward()[0]            # (2, 56, 56)
-        ab = predicted.transpose(1, 2, 0).astype(np.float32)
-        ab = cv2.resize(ab, (width, height)) * saturation  # stretch to photo size
+        with torch.no_grad():
+            predicted = self._model(tensor).float()            # (1, 2, 256, 256), ab units
 
-        lab = np.concatenate((original_l[:, :, np.newaxis], ab), axis=2)
-        result_rgb = cv2.cvtColor(lab.astype(np.float32), cv2.COLOR_LAB2RGB)
+        ab = F.interpolate(predicted, size=(height, width), mode="bilinear",
+                           align_corners=False)[0].numpy().transpose(1, 2, 0) * saturation
+        lab = np.concatenate((original_l[:, :, np.newaxis], ab), axis=2).astype(np.float32)
+        result_rgb = cv2.cvtColor(lab, cv2.COLOR_LAB2RGB)
+        # clip BEFORE converting to bytes, or out-of-range values wrap around
         result_bytes = (np.clip(result_rgb, 0.0, 1.0) * 255.0).round().astype(np.uint8)
         return Image.fromarray(result_bytes, "RGB")
 
@@ -207,22 +197,21 @@ class ColorizerChain:
 
 
 # ---------------------------------------------------------------------------
-# Self-test (needs no weights)
+# Self-test (needs the vendored code, but no weights)
 # ---------------------------------------------------------------------------
-class _FakeNetwork:
-    """Stand-in for the OpenCV network: predicts one constant colour."""
+class _FakeModel(torch.nn.Module):
+    """Stand-in network: predicts one constant colour, records its input."""
 
     def __init__(self, a: float, b: float):
+        super().__init__()
         self.a, self.b = a, b
-        self.last_blob = None
+        self.last_input = None
 
-    def setInput(self, blob):
-        self.last_blob = blob
-
-    def forward(self):
-        out = np.zeros((1, 2, 56, 56), dtype=np.float32)   # real output is 56 x 56
-        out[0, 0] = self.a
-        out[0, 1] = self.b
+    def forward(self, x):
+        self.last_input = x.detach().clone()
+        out = torch.zeros(x.shape[0], 2, x.shape[2], x.shape[3])
+        out[:, 0] = self.a
+        out[:, 1] = self.b
         return out
 
 
@@ -269,48 +258,53 @@ def _run_self_test() -> int:
     gray_photo = Image.fromarray(ramp, "L").convert("RGB")
 
     # ---- 1. Our pre/post-processing, with a stand-in network ----
-    fake = _FakeNetwork(0.0, 0.0)
-    plain = BackupColorizer(network=fake).colorize(gray_photo)
+    fake = _FakeModel(0.0, 0.0)
+    plain = BackupColorizer(model=fake).colorize(gray_photo)
     pixels = np.asarray(plain).astype(int)
     check("output keeps size (non-square 300x120) and RGB mode",
           plain.size == gray_photo.size and plain.mode == "RGB")
     check("a=b=0 gives a gray picture (R = G = B)",
           np.abs(pixels[..., 0] - pixels[..., 1]).max() <= 1
           and np.abs(pixels[..., 1] - pixels[..., 2]).max() <= 1)
-    check("network input is 1x1x224x224 with lightness shifted into -50..50",
-          fake.last_blob.shape == (1, 1, 224, 224)
-          and fake.last_blob.min() >= -50.0 and fake.last_blob.max() <= 50.0)
+    check("network input is 1x1x256x256 with lightness in 0..100",
+          tuple(fake.last_input.shape) == (1, 1, 256, 256)
+          and float(fake.last_input.min()) >= 0.0 and float(fake.last_input.max()) <= 100.0)
 
-    tinted = BackupColorizer(network=_FakeNetwork(15.0, 20.0)).colorize(gray_photo)
+    tinted = BackupColorizer(model=_FakeModel(15.0, 20.0)).colorize(gray_photo)
     t = np.asarray(tinted).astype(int)
     check("predicted colour appears in the result",
           np.abs(t[..., 0] - t[..., 2]).mean() > 10)
     check("original lightness is preserved (mean change under 3)",
           float(np.abs(_lightness(tinted) - _lightness(gray_photo)).mean()) < 3.0)
-    muted = BackupColorizer(network=_FakeNetwork(15.0, 20.0)).colorize(
-        gray_photo, saturation=0.0)
+    muted = BackupColorizer(model=_FakeModel(15.0, 20.0)).colorize(gray_photo, saturation=0.0)
     m = np.asarray(muted).astype(int)
     check("saturation 0 removes all colour", np.abs(m[..., 0] - m[..., 2]).max() <= 1)
     check("invalid saturation is rejected",
-          raises(ValueError, lambda: BackupColorizer(network=fake).colorize(
+          raises(ValueError, lambda: BackupColorizer(model=fake).colorize(
               gray_photo, saturation=-1)))
 
-    # ---- 2. Files missing / damaged ----
+    # ---- 2. The real network definition and the weights handling ----
+    try:
+        from src.vendor.siggraph17.siggraph17 import SIGGRAPHGenerator
+        with torch.no_grad():
+            out = SIGGRAPHGenerator().eval()(torch.rand(1, 1, 64, 64) * 100)
+        check("real SIGGRAPH17 network builds and predicts a 2-channel colour map",
+              tuple(out.shape) == (1, 2, 64, 64) and bool(torch.isfinite(out).all()))
+    except ImportError as error:
+        failures += 1
+        print(f" [FAIL] backup code missing: run python scripts\\setup_backup_colorizer.py ({error})")
+
     with tempfile.TemporaryDirectory() as folder:
         folder = Path(folder)
-        with mock.patch.object(sys.modules[__name__], "PROTOTXT_PATH", folder / "a.prototxt"), \
-             mock.patch.object(sys.modules[__name__], "CLUSTER_CENTRES_PATH", folder / "b.npy"), \
-             mock.patch.object(sys.modules[__name__], "CAFFEMODEL_PATH", folder / "c.caffemodel"):
-            check("missing files give BackupWeightsMissingError",
+        with mock.patch.object(sys.modules[__name__], "WEIGHTS_PATH", folder / "none.pth"):
+            check("missing weights give BackupWeightsMissingError",
                   raises(BackupWeightsMissingError,
                          lambda: BackupColorizer().colorize(gray_photo)))
-
-            (folder / "a.prototxt").write_text('name: "broken"\n')
-            np.save(folder / "b.npy", np.zeros((313, 2), dtype=np.int64))
-            (folder / "c.caffemodel").write_bytes(b"this is not a model" * 100)
-            check("damaged files give a clear ColorizationError (no crash)",
-                  raises(ColorizationError,
-                         lambda: BackupColorizer().colorize(gray_photo)))
+        broken = folder / "broken.pth"
+        broken.write_bytes(b"this is not a model" * 100)
+        with mock.patch.object(sys.modules[__name__], "WEIGHTS_PATH", broken):
+            check("a damaged weights file gives a clear ColorizationError",
+                  raises(ColorizationError, lambda: BackupColorizer().colorize(gray_photo)))
 
     # ---- 3. Fallback chain, with stand-in colorizers ----
     good_primary, good_backup = Image.new("RGB", (4, 4), "red"), Image.new("RGB", (4, 4), "blue")
@@ -327,15 +321,12 @@ def _run_self_test() -> int:
           outcome.method == METHOD_BACKUP and outcome.image is good_backup
           and "model broke" in outcome.notes[0])
 
-    check("both fail: one clear error naming both reasons",
-          raises(ColorizationError, lambda: ColorizerChain(
-              _Stub(ColorizationError("A")), _Stub(ColorizationError("B"))
-          ).colorize(gray_photo)))
     try:
         ColorizerChain(_Stub(ColorizationError("reasonA")),
                        _Stub(ColorizationError("reasonB"))).colorize(gray_photo)
+        check("both fail: one clear error naming both reasons", False)
     except ColorizationError as error:
-        check("error message contains both reasons",
+        check("both fail: one clear error naming both reasons",
               "reasonA" in str(error) and "reasonB" in str(error))
 
     check("programming errors (ValueError) are NOT hidden by the backup",
@@ -350,9 +341,8 @@ def _run_self_test() -> int:
           outcome.method == METHOD_BACKUP and "not found" in outcome.notes[0])
 
     print("-" * 62)
-    print(f" Backup files present: "
-          f"{'yes' if BackupColorizer().weights_available() else 'NO'} ({BACKUP_DIR})")
-    print(" (The self-test does not load the real files. To test them, run\n"
+    print(f" Backup weights present: {'yes' if WEIGHTS_PATH.is_file() else 'NO'} ({WEIGHTS_PATH})")
+    print(" (The self-test does not load the real weights. To test them, run\n"
           "  python -m src.colorize_backup outputs\\preview_gray.png)")
     print(" RESULT:", "all checks passed" if failures == 0
           else f"{failures} check(s) failed")
