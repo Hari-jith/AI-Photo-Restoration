@@ -237,7 +237,7 @@ Each ends with `all checks passed` when healthy.
 
 ### 5.1 Timings on the author's CPU-only Windows machine
 
-*(CPU model and RAM: add yours here.)* Measured per stage on a 459x668 photo:
+*AMD Ryzen 5 7530U RAM - 16GB* Measured per stage on a 459x668 photo:
 
 | Stage | Time | Source |
 |---|---|---|
@@ -461,6 +461,3 @@ git commit -m "Module N: short description"
 - **DDColor:** Xiaoyang Kang et al., ICCV 2023.
 - **Colorization:** Richard Zhang, Phillip Isola, Alexei A. Efros, SIGGRAPH 2017.
 - **GFPGAN:** Tencent ARC. **Real-ESRGAN, facexlib:** xinntao. **BasicSR:** XPixelGroup.
-
-**License of this project's own code:** not chosen yet. Decide before
-publishing, and keep the notes in section 7 about the models' terms.
