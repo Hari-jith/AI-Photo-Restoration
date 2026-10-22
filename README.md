@@ -473,24 +473,6 @@ Done: Modules 1-10 (see [Current status](#1-current-status)).
 
 Possible stretch goal after everything works: a small transfer-learning
 damage classifier. It would need labelled data and is not required for the app.
-
----
-
-## 16. Git and GitHub notes
-
-**Commit:** source code, `requirements.txt`, this README, small sample images
-(public-domain or your own only), and `src/vendor/ddcolor/` including its
-`LICENSE` and `NOTICE.txt`.
-
-**Never commit:** `.venv/`, model weights (`models/`, `*.pth`, `*.pt`,
-`*.caffemodel`), generated images (`outputs/`), uploads, logs, `.env` files,
-caches. `.gitignore` already excludes these. Do not commit photos of private
-individuals to a public repository.
-
----
-
-## 17. Credits
-
 - **DDColor:** Xiaoyang Kang et al., "DDColor: Towards Photo-Realistic Image
   Colorization via Dual Decoders", ICCV 2023.
 - **Colorful Image Colorization:** Richard Zhang, Phillip Isola, Alexei A. Efros,
