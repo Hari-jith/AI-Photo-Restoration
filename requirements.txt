@@ -38,3 +38,10 @@ Pillow==10.4.0
 # Classical computer vision (denoising, inpainting, colour conversion) and the
 # neural-network engine used by the backup colorizer (cv2.dnn)
 opencv-python==4.10.0.84
+
+# Web API (Module 17)
+fastapi==0.146.0
+uvicorn==0.54.0
+python-multipart==0.0.32
+# Needed only for the API self-test
+httpx==0.28.1
