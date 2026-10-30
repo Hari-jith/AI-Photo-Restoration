@@ -43,5 +43,5 @@ opencv-python==4.10.0.84
 fastapi==0.146.0
 uvicorn==0.54.0
 python-multipart==0.0.32
-# Needed only for the API self-test
-httpx==0.28.1
+# Needed only for the API self-test (Starlette's test client now prefers httpx2)
+httpx2==2.16.0
