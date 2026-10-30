@@ -286,7 +286,7 @@ def _run_self_test() -> int:
     try:
         from fastapi.testclient import TestClient
     except ImportError as error:
-        print(f" The self-test needs the 'httpx' package: pip install httpx==0.28.1  ({error})")
+        print(f" The self-test needs the 'httpx2' package: pip install httpx2==2.16.0  ({error})")
         return 1
     import logging
     import tempfile
