@@ -380,6 +380,7 @@ No weights come from Hugging Face.
   many faces, inputs near the size limits.
 - **Limits:** photos are shrunk to a 1024 px working size on CPU; results are
   capped at 4096 px; upscaling is limited to 4x.
+- With --colorize always on the test photo, DDColor produced a saturated orange patch on the dress and a strongly red background. Colorization changed noticeably between two runs on slightly different inputs, so treat it as unstable. Repair covered 3.5% of the photo and the main cracks remained.
 
 ---
 
