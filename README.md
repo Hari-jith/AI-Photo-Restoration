@@ -55,13 +55,13 @@ heavily cracked portrait. There are no PSNR/SSIM numbers and no benchmark set ye
 | 5 | Photo analysis | `src/analysis.py` | Yes |
 | 6 | Preprocessing | `src/preprocessing.py` | Yes |
 | 7 | Device manager, weight downloader | `src/device.py`, `scripts/download_weights.py` | Yes |
-| 8 | Grain and scratch repair (OpenCV) | `src/classical_restore.py` | **Not yet** (tested in a development sandbox) |
+| 8 | Grain and scratch repair (OpenCV) | `src/classical_restore.py` | Yes |
 | 9 | Colorization, DDColor | `src/colorize.py`, `scripts/setup_ddcolor_code.py` | Yes |
 | 10 | Backup colorizer and fallback chain | `src/colorize_backup.py`, `scripts/setup_backup_colorizer.py` | Yes |
 | 11 | Face restoration, GFPGAN | `src/face_restore.py`, `scripts/setup_face_code.py` | Yes |
 | 12 | Upscaling, Real-ESRGAN | `src/super_resolution.py`, `scripts/setup_upscaler_code.py` | Yes |
-| 13 | Post-processing | `src/postprocess.py` | **Not yet** |
-| 14 | Complete pipeline | `src/pipeline.py` | **Not yet** |
+| 13 | Post-processing | `src/postprocess.py` | Yes |
+| 14 | Complete pipeline | `src/pipeline.py` | Yes |
 | 15 | *(skipped: the command line is built into `pipeline.py`)* | | |
 | 16-25 | Evaluation, website, tests, packaging | | Planned |
 
