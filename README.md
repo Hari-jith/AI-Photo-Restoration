@@ -241,8 +241,8 @@ Each ends with `all checks passed` when healthy.
 
 | Stage | Time | Source |
 |---|---|---|
-| DDColor: load model (once per process) | 12-16 s | measured |
-| DDColor: colorize | 9.5-10.7 s | measured |
+| DDColor: load model (once per process) | 28.1 s | measured |
+| DDColor: colorize | 56.1 s | measured |
 | Backup colorizer: load / colorize | 0.3 s / 1.3 s | measured |
 | Face models: load (once per process) | 2.6-3.8 s | measured |
 | Face restoration (1 face) | 8.3-9.7 s | measured |
