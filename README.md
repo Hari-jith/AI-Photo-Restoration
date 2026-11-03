@@ -1,7 +1,7 @@
 # AI Old Photo Restoration & Colorization
 
 > **Work in progress.** Milestone 1 is reached: the complete restoration
-> pipeline runs from the command line. **There is no website yet.** This README
+> pipeline runs from the command line. **There is no website yet. Website in progress** This README
 > describes the project as built through Module 14 of 25 and separates what is
 > confirmed from what is only planned. Last updated: October 2026.
 
