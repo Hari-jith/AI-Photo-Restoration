@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Repair, colorize and enlarge old photographs. Everything runs on your own computer.">
+  <title>Old Photo Restoration</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%237a4a1e'/%3E%3Crect x='7' y='9' width='18' height='14' rx='2' fill='none' stroke='%23fff' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='3.5' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+  <!-- app.js is added in Module 19. Until then this page is a design preview (see below). -->
+  <script src="app.js" defer></script>
+</head>
+
+<!--
+  HOW THIS PAGE WORKS
+  * <body data-state="..."> is the only thing the script changes to move between screens:
+        idle     no photo chosen yet
+        ready    a photo is chosen, options can be changed
+        running  the photo is being restored (progress is shown)
+        done     the result is shown
+    The stylesheet decides what is visible in each state.
+  * DESIGN PREVIEW WITHOUT JAVASCRIPT: open this file with  #preview-ready,
+    #preview-running, #preview-done or #preview-error added to its address, for example
+        index.html#preview-running
+    (the empty <span> elements right below <body> make that work).
+  * The options form and the result pictures are filled in by app.js. The ids below
+    (drop-zone, file-input, start-button, ...) are what app.js looks for: do not rename them.
+-->
+<body data-state="idle">
+  <div class="preview-anchors" aria-hidden="true">
+    <span id="preview-ready"></span><span id="preview-running"></span>
+    <span id="preview-done"></span><span id="preview-error"></span>
+  </div>
+  <a class="skip-link" href="#main">Skip to the main content</a>
+
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <div>
+        <h1>Old Photo Restoration</h1>
+        <p class="tagline">Repair, colorize and enlarge old photographs. Everything runs on this computer; nothing is sent to the internet.</p>
+      </div>
+      <p id="status-chip" class="chip" role="status">Checking the server…</p>
+    </div>
+  </header>
+
+  <noscript>
+    <div class="wrap"><p class="banner banner--error">This page needs JavaScript to work. Please turn it on in your browser and reload.</p></div>
+  </noscript>
+
+  <main class="wrap" id="main">
+    <div id="error-box" class="banner banner--error" role="alert" hidden>
+      <p id="error-text">Something went wrong.</p>
+      <button type="button" class="btn btn--quiet" id="error-dismiss">Dismiss</button>
+    </div>
+
+    <!-- 1. CHOOSE A PHOTO -->
+    <section class="card card--upload" id="card-upload" aria-labelledby="h-upload">
+      <h2 id="h-upload"><span class="step-no" aria-hidden="true">1</span>Choose a photo</h2>
+
+      <input class="visually-hidden" type="file" id="file-input"
+             accept="image/jpeg,image/png,image/webp,image/bmp,image/tiff">
+      <label class="drop-zone" id="drop-zone" for="file-input">
+        <svg class="drop-zone__icon" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true" focusable="false">
+          <rect x="6" y="10" width="36" height="28" rx="4" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <circle cx="17" cy="20" r="3.5" fill="none" stroke="currentColor" stroke-width="2.5"/>
+          <path d="M8 35l10-9 7 6 6-5 11 9" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/>
+        </svg>
+        <span class="drop-zone__title">Drop a photo here, or click to choose one</span>
+        <span class="drop-zone__hint" id="limits-text">JPEG, PNG, WebP, BMP or TIFF, up to 10 MB</span>
+      </label>
+
+      <div class="file-preview" id="file-preview">
+        <img class="file-preview__img" id="preview-img" alt="Preview of the photo you chose"
+             src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+        <div class="file-preview__text">
+          <p class="file-preview__name" id="file-name">old-photo.jpg</p>
+          <p class="file-preview__meta" id="file-meta">1200 × 800 pixels · 2.3 MB</p>
+        </div>
+        <button type="button" class="btn btn--quiet" id="remove-file">Choose a different photo</button>
+      </div>
+    </section>
+
+    <!-- 2. OPTIONS -->
+    <section class="card card--options" id="card-options" aria-labelledby="h-options">
+      <h2 id="h-options"><span class="step-no" aria-hidden="true">2</span>Choose what to do</h2>
+
+      <div class="presets" role="group" aria-label="Quick settings">
+        <button type="button" class="btn btn--secondary" data-preset="recommended" aria-pressed="true">Recommended</button>
+        <button type="button" class="btn btn--secondary" data-preset="fast" aria-pressed="false">Fast</button>
+        <button type="button" class="btn btn--secondary" data-preset="best" aria-pressed="false">Best quality (slow)</button>
+      </div>
+      <p class="hint" id="preset-hint">Recommended: repairs light damage, restores faces and enlarges the photo twice.</p>
+
+      <form id="options-form" novalidate>
+        <p class="hint" id="options-loading">Loading the options from the server…</p>
+        <div class="options-grid" id="options-basic"></div>
+        <details class="advanced" id="options-advanced-wrap">
+          <summary>Advanced options</summary>
+          <div class="options-grid" id="options-advanced"></div>
+        </details>
+        <div class="actions">
+          <button type="submit" class="btn btn--primary" id="start-button" disabled>Restore this photo</button>
+          <p class="hint" id="start-hint">Choose a photo first.</p>
+        </div>
+      </form>
+    </section>
+
+    <!-- 3. PROGRESS -->
+    <section class="card card--progress" id="card-progress" aria-labelledby="h-progress">
+      <h2 id="h-progress">Restoring your photo</h2>
+      <div class="progress" id="progress-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+           aria-valuenow="0" aria-labelledby="h-progress">
+        <div class="progress__fill" id="progress-fill"></div>
+      </div>
+      <p class="progress__line"><strong id="progress-percent">0%</strong>
+        <span id="progress-message" aria-live="polite">Starting…</span></p>
+      <p class="hint" id="queue-info" hidden>Waiting for the photo in front of yours…</p>
+
+      <ol class="steps" id="steps-list">
+        <li data-step="prepare" data-status="done"><span class="steps__label">Prepare the photo</span><span class="steps__time"></span></li>
+        <li data-step="analyze" data-status="done"><span class="steps__label">Analyze the photo</span><span class="steps__time"></span></li>
+        <li data-step="repair" data-status="active"><span class="steps__label">Remove grain and scratches</span><span class="steps__time"></span></li>
+        <li data-step="colorize" data-status="pending"><span class="steps__label">Colorize</span><span class="steps__time"></span></li>
+        <li data-step="upscale" data-status="pending"><span class="steps__label">Enlarge</span><span class="steps__time"></span></li>
+        <li data-step="faces" data-status="pending"><span class="steps__label">Restore faces</span><span class="steps__time"></span></li>
+        <li data-step="finish" data-status="pending"><span class="steps__label">Final touch-ups</span><span class="steps__time"></span></li>
+      </ol>
+
+      <div class="actions actions--split">
+        <p class="hint">Time so far: <span id="elapsed">0 s</span>. Without a graphics card this usually takes one to two minutes.</p>
+        <button type="button" class="btn btn--secondary" id="cancel-button">Cancel</button>
+      </div>
+    </section>
+
+    <!-- 4. RESULT -->
+    <section class="card card--result" id="card-result" aria-labelledby="h-result">
+      <h2 id="h-result">Your restored photo</h2>
+
+      <div class="notes" id="notes" hidden>
+        <h3>Things to know</h3>
+        <ul id="notes-list"></ul>
+      </div>
+
+      <div class="compare" id="compare">
+        <img class="compare__img compare__img--after" id="img-after" alt="The restored photo"
+             src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+        <img class="compare__img compare__img--before" id="img-before" alt="The original photo"
+             src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+        <span class="compare__label compare__label--before" aria-hidden="true">Before</span>
+        <span class="compare__label compare__label--after" aria-hidden="true">After</span>
+        <div class="compare__handle" aria-hidden="true"></div>
+        <input class="compare__range" id="compare-range" type="range" min="0" max="100" value="50"
+               aria-label="Compare before and after: drag left or right">
+      </div>
+      <p class="hint compare__hint">Drag across the photo to compare. <a id="open-full" href="#" target="_blank" rel="noopener">Open the restored photo full size</a></p>
+
+      <div class="actions actions--wrap">
+        <a class="btn btn--primary" id="download-png" href="#" download="restored.png">Download (PNG, best quality)</a>
+        <a class="btn btn--secondary" id="download-jpeg" href="#" download="restored.jpg">Download (JPEG, smaller)</a>
+        <button type="button" class="btn btn--secondary" id="again-button">Try different settings</button>
+        <button type="button" class="btn btn--quiet" id="new-button">Restore another photo</button>
+      </div>
+
+      <details class="advanced">
+        <summary>What was done to this photo</summary>
+        <div class="table-scroll">
+          <table class="steps-table">
+            <thead><tr><th scope="col">Step</th><th scope="col">Result</th><th scope="col">Time</th><th scope="col">Details</th></tr></thead>
+            <tbody id="steps-table-body"></tbody>
+          </table>
+        </div>
+        <p class="hint" id="analysis-summary"></p>
+      </details>
+    </section>
+
+    <div class="visually-hidden" id="live-region" role="status" aria-live="polite"></div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap">
+      <p>The restoration <strong>invents plausible detail</strong>. Colours and faces are good guesses, not the original truth.</p>
+      <p>Your photos stay on this computer and are deleted automatically (after one hour, or when the server stops).</p>
+      <p>The face restoration model is licensed for non-commercial use only. <a href="/docs">Technical interface (API)</a></p>
+    </div>
+  </footer>
+</body>
+</html>
