@@ -5,12 +5,13 @@ The web API. It lets a browser (or any program) upload a photo, follow the
 restoration while it runs, and download the result.
 
     Start the server:      python -m src.api.main
-    Then open:             http://127.0.0.1:8000/docs     (interactive page, try it there)
-    Self-test:             python -m src.api.main --self-test      (needs httpx)
+    Then open:             http://127.0.0.1:8000          (the web page: frontend/index.html)
+    For programmers:       http://127.0.0.1:8000/docs     (interactive API page)
+    Self-test:             python -m src.api.main --self-test      (needs httpx2)
 
 Endpoints
     GET    /api/health                  server status, which models are installed
-    GET    /api/options                 every option with its allowed values (for building a form)
+    GET    /api/options                 every option with its allowed values, plus the pipeline steps
     POST   /api/jobs                    upload a photo (+ options) -> returns a job id
     GET    /api/jobs/{id}               status, progress, step table, notes
     POST   /api/jobs/{id}/cancel        stop a job
@@ -24,20 +25,26 @@ Safety
   * By default the server listens on 127.0.0.1 only: there is NO login, so do
     not expose it to a network you do not trust.
   * Pictures are temporary (see jobs.py) and responses are marked no-store.
+  * The page is served with a strict Content-Security-Policy: only this server's own
+    scripts, styles and pictures may load. (The /docs page is the exception, because
+    its interface is loaded from a public CDN, so /docs needs an internet connection.)
   * Failures return plain messages; internal details only go to the log file.
 """
 
 import argparse
 import io
+import mimetypes
 import os
 import sys
 import time
 from contextlib import asynccontextmanager
 from dataclasses import asdict, fields
+from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from starlette.concurrency import run_in_threadpool
 
@@ -49,14 +56,29 @@ from src.image_io import (CorruptImageError, FileTooLargeError, ImageTooLargeErr
                           ImageTooSmallError, ImageValidationError, UnsupportedFormatError,
                           load_image_from_bytes)
 from src.logging_setup import get_logger
-from src.pipeline import PipelineOptions
+from src.pipeline import STEP_ORDER, STEP_WEIGHTS, PipelineOptions
 
 logger = get_logger(__name__)
+
+# On Windows, Python takes file types from the registry, where ".js" is sometimes wrongly set
+# (for example to "text/plain") by other software. Together with the "nosniff" header the
+# browser would then refuse to run app.js. These two lines make the types certain.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/css", ".css")
 
 API_VERSION = "0.1.0"
 MULTIPART_OVERHEAD_BYTES = 1024 * 1024        # form fields and boundaries around the file
 JPEG_QUALITY = 92
 DEFAULTS = PipelineOptions()                  # the single source of the default values
+FRONTEND_DIR = config.PROJECT_ROOT / "frontend"
+
+# Only this server's own files may be loaded by the page (no inline code, no other sites).
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; img-src 'self' blob: data:; style-src 'self'; script-src 'self'; "
+    "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; "
+    "frame-ancestors 'none'")
+# The automatic API docs load their interface from a public CDN, which this policy would block.
+DOCS_PATHS = ("/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect")
 
 # HTTP status for each kind of image problem
 VALIDATION_STATUS = [
@@ -98,7 +120,7 @@ OPTION_INFO = [
 ]
 
 
-def create_app(manager: JobManager | None = None) -> FastAPI:
+def create_app(manager: JobManager | None = None, frontend_dir: Path | None = None) -> FastAPI:
     manager = manager or JobManager()
 
     @asynccontextmanager
@@ -125,6 +147,8 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
+        if request.url.path not in DOCS_PATHS:
+            response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
         return response
 
     @app.exception_handler(RequestValidationError)
@@ -143,10 +167,6 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(error)) from None
 
     # -- information -------------------------------------------------------------
-    @app.get("/", include_in_schema=False)
-    def home():
-        return RedirectResponse("/docs")
-
     @app.get("/api/health", summary="Server status")
     def health():
         from src.colorize import DDCOLOR_WEIGHTS_PATH
@@ -173,7 +193,8 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
 
     @app.get("/api/options", summary="All options with allowed values and defaults")
     def options():
-        return {"options": OPTION_INFO, "defaults": asdict(DEFAULTS)}
+        return {"options": OPTION_INFO, "defaults": asdict(DEFAULTS),
+                "steps": [{"name": name, "weight": STEP_WEIGHTS[name]} for name in STEP_ORDER]}
 
     # -- jobs --------------------------------------------------------------------
     @app.post("/api/jobs", status_code=202, summary="Upload a photo and start restoring it")
@@ -275,6 +296,16 @@ def create_app(manager: JobManager | None = None) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(error)) from None
         return FileResponse(path, media_type="image/png", content_disposition_type="inline")
 
+    # The web page itself. This MUST be added last: a mount at "/" would otherwise
+    # swallow the API routes above it.
+    page_dir = Path(frontend_dir) if frontend_dir is not None else FRONTEND_DIR
+    if (page_dir / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=str(page_dir), html=True), name="frontend")
+    else:
+        @app.get("/", include_in_schema=False)
+        def home():                       # no frontend folder: fall back to the API docs
+            return RedirectResponse("/docs")
+
     return app
 
 
@@ -350,8 +381,13 @@ def _run_self_test() -> int:
         temp = Path(temp)
 
         # ============ normal flow ============
+        front = temp / "front"
+        front.mkdir()
+        (front / "index.html").write_text("<!doctype html><title>t</title><h1>page</h1>", encoding="utf-8")
+        (front / "style.css").write_text("body{margin:0}", encoding="utf-8")
+        (front / "app.js").write_text("console.log(1)", encoding="utf-8")
         manager = make_manager(temp / "a")
-        with TestClient(create_app(manager)) as client:
+        with TestClient(create_app(manager, frontend_dir=front)) as client:
             health = client.get("/api/health").json()
             check("health: ok, with device, models and limits",
                   health["status"] == "ok" and "kind" in health["device"]
@@ -360,10 +396,24 @@ def _run_self_test() -> int:
             names = {o["name"] for o in schema["options"]}
             check("options: the schema covers every pipeline option, defaults match",
                   names == {f.name for f in fields(PipelineOptions)}
-                  and schema["defaults"] == asdict(PipelineOptions()))
-            check("the home page redirects to the interactive docs",
-                  client.get("/", follow_redirects=False).status_code in (302, 307)
-                  and client.get("/docs").status_code == 200)
+                  and schema["defaults"] == asdict(PipelineOptions())
+                  and [st["name"] for st in schema["steps"]] == STEP_ORDER)
+            page = client.get("/")
+            check("the web page is served at / with a strict Content-Security-Policy",
+                  page.status_code == 200 and "text/html" in page.headers["content-type"]
+                  and "script-src 'self'" in page.headers["content-security-policy"]
+                  and "default-src 'self'" in page.headers["content-security-policy"])
+            check("its stylesheet and script are served with the right types",
+                  "text/css" in client.get("/style.css").headers["content-type"]
+                  and "javascript" in client.get("/app.js").headers["content-type"])
+            docs = client.get("/docs")
+            check("the /docs page works and is the one place without the policy (it loads from a CDN)",
+                  docs.status_code == 200 and "content-security-policy" not in docs.headers
+                  and "content-security-policy" in client.get("/api/health").headers)
+            check("the API routes still work next to the page, and path tricks give 404",
+                  client.get("/api/health").status_code == 200
+                  and client.get("/%2e%2e/src/config.py").status_code == 404
+                  and client.get("/nothing-here.txt").status_code == 404)
 
             response = upload(client, name="../../evil name.png")
             body = response.json()
@@ -429,6 +479,10 @@ def _run_self_test() -> int:
                   client.delete(f"/api/jobs/{job_id}").status_code == 204
                   and client.get(f"/api/jobs/{job_id}").status_code == 404
                   and not (temp / "a" / "jobs" / job_id).exists())
+
+        with TestClient(create_app(make_manager(temp / "h"), frontend_dir=temp / "no-such-folder")) as client:
+            check("without a frontend folder, / falls back to the API docs",
+                  client.get("/", follow_redirects=False).status_code in (302, 307))
 
         # ============ failures inside a job ============
         with TestClient(create_app(make_manager(temp / "b", colorizer=_StubColorizer(RuntimeError(
@@ -526,7 +580,8 @@ def main() -> int:
               "          Only use a host other than 127.0.0.1 on a network you trust.")
     config.ensure_directories()
     print(f"\n Photo restoration server starting.\n"
-          f" Open  http://{arguments.host}:{arguments.port}/docs  in your browser.\n"
+          f" Open  http://{arguments.host}:{arguments.port}  in your browser.\n"
+          f" (For programmers: http://{arguments.host}:{arguments.port}/docs)\n"
           f" Stop it with Ctrl+C. Results are deleted when it stops.\n")
     uvicorn.run(create_app(), host=arguments.host, port=arguments.port, log_level="warning")
     return 0
