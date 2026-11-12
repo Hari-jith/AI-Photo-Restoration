@@ -1,119 +1,131 @@
 # AI Old Photo Restoration & Colorization
 
-> **Work in progress.** Milestone 1 is reached: the complete restoration
-> pipeline runs from the command line. **There is no website yet. Website in progress** This README
-> describes the project as built through Module 14 of 25 and separates what is
-> confirmed from what is only planned. Last updated: October 2026.
+![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
+![PyTorch 2.1.2](https://img.shields.io/badge/PyTorch-2.1.2-ee4c2c)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.146-009688)
+![Runs on CPU](https://img.shields.io/badge/runs%20on-CPU-informational)
+![No paid APIs](https://img.shields.io/badge/paid%20APIs-none-success)
+![Status](https://img.shields.io/badge/status-work%20in%20progress-orange)
 
-A locally run, zero-cost tool that restores old photographs with open-source
-models: it removes grain and scratches, colorizes black-and-white photos,
-restores faces, enlarges the picture, and applies final touch-ups. No paid
-services, no cloud APIs, and no Hugging Face: every model comes from an
-official GitHub repository or another official project host.
+**Restore old photographs on your own computer.** A web app and command-line tool that takes a scanned old photo through a chain of open-source models: it repairs thin scratches and folds, colorizes black-and-white photos, restores faces, enlarges the picture and applies light finishing touches.
 
-The project is also a learning build. It is developed one small, tested module
-at a time, and the reasoning behind each decision is kept in the code comments.
+Everything runs locally, on a CPU if you have no graphics card. There are **no paid services, no cloud APIs and no Hugging Face dependency**: every model comes from its authors' official GitHub repository or project host.
 
----
+<!-- ADD IMAGE 1 of 8 (hero): save as docs/images/hero-before-after.jpg
+     Content: ONE good before | after pair, side by side. Use a photo you have the rights to share.
+     How to make it: see "Images to add" in the notes that came with this README. -->
+<p align="center">
+  <img src="docs/images/hero-before-after.jpg" alt="An old photograph before (left) and after (right) restoration" width="820">
+</p>
+<p align="center"><em>TODO: caption, for example "Left: original scan. Right: restored with the default settings. Photo: (source or credit)."</em></p>
+
+> **Status: working, with modest results.** The full pipeline and the web app work end to end (tested on Windows, CPU only). On the photos tried so far, the clearest gains are **the removal of some of the larger folds and cracks** and **sharper faces**. Colour is a plausible guess that can differ between runs, fine cracks and heavy damage remain, and enlarging also sharpens the damage. This is a learning project about integrating several pretrained models into one reliable local application. It is not a replacement for professional restoration. See [Known limitations](#14-known-limitations).
 
 ## Contents
 
-1. [Status at a glance](#1-status-at-a-glance)
-2. [How the pipeline works](#2-how-the-pipeline-works)
-3. [Quick start](#3-quick-start)
-4. [Using it](#4-using-it)
-5. [What was measured, and what it decided](#5-what-was-measured-and-what-it-decided)
-6. [Architecture and project structure](#6-architecture-and-project-structure)
-7. [Models and licenses](#7-models-and-licenses)
-8. [Known limitations](#8-known-limitations)
-9. [Configuration](#9-configuration)
-10. [Troubleshooting](#10-troubleshooting)
-11. [Roadmap](#11-roadmap)
-12. [Git and GitHub notes](#12-git-and-github-notes)
-13. [Credits and license](#13-credits-and-license)
+1. [What it does](#1-what-it-does)
+2. [Results](#2-results)
+3. [Features](#3-features)
+4. [Quick start](#4-quick-start)
+5. [Using it](#5-using-it)
+6. [How it works](#6-how-it-works)
+7. [Performance](#7-performance)
+8. [Models and licenses](#8-models-and-licenses)
+9. [Engineering notes](#9-engineering-notes)
+10. [Testing](#10-testing)
+11. [Project structure](#11-project-structure)
+12. [Configuration](#12-configuration)
+13. [Privacy and security](#13-privacy-and-security)
+14. [Known limitations](#14-known-limitations)
+15. [Troubleshooting](#15-troubleshooting)
+16. [Roadmap](#16-roadmap)
+17. [Credits](#17-credits)
+18. [License](#18-license)
 
 ---
 
-## 1. Status at a glance
+## 1. What it does
 
-**Works today (command line):** photo validation, analysis, grain and scratch
-repair, colorization (with an automatic fallback model), face restoration,
-upscaling, post-processing, and one command that runs all of it.
+A photo goes through seven steps. Each can be switched off or tuned.
 
-**Not built yet:** the website and its API, an automated pytest suite,
-quantitative quality evaluation, packaging, deployment.
-
-**Evaluated on very little data.** All visual judgements so far come from one
-heavily cracked portrait. There are no PSNR/SSIM numbers and no benchmark set yet.
-
-| # | Module | Main files | Confirmed on the author's machine |
-|---|---|---|---|
-| 1 | Environment check | `scripts/check_environment.py` | Yes |
-| 2 | Git setup | `.gitignore` | n/a |
-| 3 | Config and logging | `src/config.py`, `src/logging_setup.py` | Yes |
-| 4 | Safe image loading and validation | `src/image_io.py` | Yes |
-| 5 | Photo analysis | `src/analysis.py` | Yes |
-| 6 | Preprocessing | `src/preprocessing.py` | Yes |
-| 7 | Device manager, weight downloader | `src/device.py`, `scripts/download_weights.py` | Yes |
-| 8 | Grain and scratch repair (OpenCV) | `src/classical_restore.py` | Yes |
-| 9 | Colorization, DDColor | `src/colorize.py`, `scripts/setup_ddcolor_code.py` | Yes |
-| 10 | Backup colorizer and fallback chain | `src/colorize_backup.py`, `scripts/setup_backup_colorizer.py` | Yes |
-| 11 | Face restoration, GFPGAN | `src/face_restore.py`, `scripts/setup_face_code.py` | Yes |
-| 12 | Upscaling, Real-ESRGAN | `src/super_resolution.py`, `scripts/setup_upscaler_code.py` | Yes |
-| 13 | Post-processing | `src/postprocess.py` | Yes |
-| 14 | Complete pipeline | `src/pipeline.py` | Yes |
-| 15 | *(skipped: the command line is built into `pipeline.py`)* | | |
-| 16-25 | Evaluation, website, tests, packaging | | Planned |
-
-Every module has a built-in self-test that needs no model weights. The
-"Confirmed" column records whether the author has run it on real hardware.
-
----
-
-## 2. How the pipeline works
-
-```
- prepare -> analyze -> repair -> colorize -> upscale -> faces -> finish
-```
-
-| Step | What it does | Default |
+| Step | What happens | Built with |
 |---|---|---|
-| prepare | Shrinks very large photos to a working size (never enlarges) | 1024 px longest side on CPU |
-| analyze | Measures colour type, noise, contrast, sharpness | always |
-| repair | Removes grain and thin scratches (OpenCV) | `light` repair, grain removal automatic |
-| colorize | DDColor; if it fails, a smaller backup model | `auto`: only if the photo is detected as black-and-white |
-| upscale | Real-ESRGAN enlargement | 2x, small fast model |
-| faces | GFPGAN face restoration, pasted onto the **upscaled** picture | on, strength 0.6 |
-| finish | Contrast restoration for faded photos; optional film grain | contrast `auto`, grain off |
+| **prepare** | Shrinks very large photos to a working size. Never enlarges. | Pillow |
+| **analyze** | Measures colour type, noise, contrast and sharpness. | OpenCV, NumPy |
+| **repair** | Removes grain and fills thin scratches and cracks. | OpenCV (non-local means, morphology, inpainting) |
+| **colorize** | Adds colour to black-and-white photos. | DDColor; a smaller backup model (Zhang et al., SIGGRAPH 2017) takes over if it fails |
+| **upscale** | Enlarges the photo up to 4 times. | Real-ESRGAN |
+| **faces** | Restores faces and pastes them onto the enlarged photo. | GFPGAN v1.4, facexlib |
+| **finish** | Restores contrast on faded photos. Optional film grain. | OpenCV |
 
-**Why this order** (measured on one real portrait, details in section 5):
-faces are restored *after* upscaling because restoring them first made the
-small upscaler add a glowing eye and plastic skin; repair comes *before*
-colorizing and upscaling because both would otherwise treat cracks as picture
-content (the upscaler makes them sharper).
+```mermaid
+flowchart LR
+    A["Upload photo"] --> B["Prepare<br/>(shrink if huge)"]
+    B --> C["Analyze<br/>(colour, noise, contrast)"]
+    C --> D["Repair<br/>(grain + scratches)"]
+    D --> E{"Colorize?"}
+    E -- "black-and-white,<br/>or forced" --> F["Colorize<br/>(DDColor, backup model)"]
+    E -- "already colour" --> G
+    F --> G["Enlarge<br/>(Real-ESRGAN)"]
+    G --> H["Restore faces<br/>(GFPGAN, pasted onto<br/>the enlarged photo)"]
+    H --> I["Finish<br/>(contrast for faded photos,<br/>optional grain)"]
+    I --> J["Before / after<br/>+ download"]
+```
 
-**Failures do not stop a run by default.** If a step fails (for example a
-missing model file), the picture continues without it, the failure is listed in
-the step table, and the program exits with code 1.
+## 2. Results
 
----
+<!-- ADD IMAGE 2 of 8: save as docs/images/pipeline-steps.jpg
+     Content: a 3 x 2 grid of the SAME photo after each step: Original, 1. Repair, 2. Colorize, 3. Enlarge, 4. Faces, Final. -->
+<p align="center">
+  <img src="docs/images/pipeline-steps.jpg" alt="The same photograph after each pipeline step: original, repaired, colorized, enlarged, faces restored, final" width="820">
+</p>
+<p align="center"><em>TODO: caption, for example "The same photo after each step (settings: ...)."</em></p>
 
-## 3. Quick start
+**What to expect, in plain words:**
 
-**System requirements:** Windows 10/11 (developed and tested there; other
-systems are untested), Python **3.11** (newer versions can fail to install some
-pinned packages), Git. No WSL needed.
+| Works reasonably well | Does not work, or only partly |
+|---|---|
+| Removes some of the **larger folds and cracks** (the clearest, highest-contrast ones) | **Fine, branching cracks, stains, tears and missing areas** remain. Filled areas can look smooth and slightly "melted". |
+| **Faces become sharper and cleaner** (GFPGAN) | The AI **invents detail**: faces can change slightly, for example eye colour at full strength |
+| Black-and-white photos get **plausible colour** | Colour is a **guess**, and it can change noticeably between runs on slightly different input |
+| Faded photos get their contrast back (tested on an artificially faded copy) | Enlarging **sharpens the damage too**. The fast enlarging model also gives an "airbrushed" look. |
+
+**How this was evaluated:** informally, by looking at results. Development concentrated on one heavily cracked portrait, plus synthetic tests for individual steps. There are **no quantitative benchmarks** (no PSNR/SSIM numbers) and no large test set yet. TODO: update this paragraph if you test more photos.
+
+## 3. Features
+
+**Web app**
+- Drag-and-drop upload with preview and instant checks (type, size)
+- Options built from the server's own list, plus three quick settings (Recommended, Fast, Best quality)
+- Live progress with a step list, elapsed time and Cancel
+- Before/after slider (mouse and keyboard), PNG and JPEG downloads
+- Light and dark theme, a layout that adapts to phone widths (checked at phone sizes, not on a real phone), keyboard accessible, no external fonts or scripts
+
+**Pipeline**
+- Every step is optional and has its own settings
+- A step that fails (for example a missing model file) does not stop the run: the photo continues without it and the failure is reported
+- Automatic fallback to a smaller colorizer, automatic retry on the CPU if the GPU runs out of memory, tiled enlarging to limit memory use
+
+**Reliability and safety**
+- Uploads are validated by content, not by file name (type, size, pixel count, corruption)
+- Downloaded model files are verified with SHA-256 checksums where one is known
+- Photos stay on your computer and results are deleted automatically
+- Every module ships a self-test that needs no model files
+
+## 4. Quick start
+
+**Requirements**
 
 | | Minimum | Recommended |
 |---|---|---|
-| CPU | 4 cores | 6+ cores |
+| OS | Windows 10/11 (the only system tested) | Windows 11 |
+| Python | **3.11** (newer versions can fail to install the pinned packages) | 3.11 |
+| CPU | 4 cores | 6 or more cores |
 | RAM | 8 GB | 16 GB |
-| GPU | none (CPU works) | NVIDIA, 6 GB+ VRAM |
+| GPU | none (CPU works) | NVIDIA with 6 GB or more (code path implemented but **untested on real GPU hardware**) |
 | Free disk | 10 GB | 15 GB |
 
-The model downloads total about 1.6 GB. Loading DDColor needs roughly 2-3 GB of
-RAM at its peak. The GPU code path is implemented but has **not been tested on
-real GPU hardware**.
+Model downloads total about 1.7 GB. Loading DDColor needs roughly 2 to 3 GB of RAM at its peak. You also need Git.
 
 Run in **Windows PowerShell**:
 
@@ -133,46 +145,55 @@ pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorc
 #    NVIDIA GPU:
 pip install torch==2.1.2 torchvision==0.16.2 --index-url https://download.pytorch.org/whl/cu121
 
-# 4. Install the other packages and check the environment
+# 4. Install the other packages, then check the environment
 pip install -r requirements.txt
 python scripts\check_environment.py
 
-# 5. Fetch the model code (each script is safe to re-run; scripts whose code is
-#    already present do nothing). GFPGAN's code is NOT stored in this repository
-#    (see section 7), so setup_face_code.py always has work to do after a clone.
-python scripts\setup_ddcolor_code.py
+# 5. Fetch model CODE that is not stored in this repository
 python scripts\setup_face_code.py
-python scripts\setup_upscaler_code.py
-python scripts\setup_backup_colorizer.py --skip-weights
 
-# 6. Download and verify the model weights (about 1.6 GB)
+# 6. Download and verify the model WEIGHTS (about 1.7 GB, can take a while)
 python scripts\download_weights.py
 python scripts\download_weights.py --verify
+
+# 7. Start the website
+python -m src.api.main
 ```
 
-If PowerShell says scripts are disabled, run
-`Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned` and activate
-again. A GPU warning on a computer without an NVIDIA GPU is expected; only
-`FAIL` lines matter.
+Then open **http://127.0.0.1:8000** in your browser. The first start can take 10 to 40 seconds while PyTorch loads.
 
-Put a photo in `samples\` and restore it:
+Notes:
+- If PowerShell says scripts are disabled: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned`, then activate again.
+- Step 5 is needed because GFPGAN's code is deliberately **not committed** (see [Models and licenses](#8-models-and-licenses)). The other model code lives in `src/vendor/`. If one of those folders is missing, run the matching script: `setup_ddcolor_code.py`, `setup_upscaler_code.py` or `setup_backup_colorizer.py --skip-weights`.
+- If the DDColor download from ModelScope is slow or fails, the script prints manual browser steps.
+- A GPU warning on a computer without an NVIDIA GPU is expected. Only `FAIL` lines matter.
+
+## 5. Using it
+
+### 5.1 The website
+
+1. Drop a photo on the page (or click to choose one).
+2. Pick a quick setting, or adjust the options.
+3. Press **Restore this photo** and watch the progress.
+4. Drag across the result to compare, then download it.
+
+For toned prints (a nearly colourless photo with warm or cool tints), choose **Colorize: Always**. The automatic detection only recognises plain black-and-white and single-tint photos.
+
+<!-- ADD IMAGES 3, 4, 5 of 8: save as docs/images/web-ui-options.png, web-ui-progress.png, web-ui-result.png
+     Content: three screenshots of the real website, desktop width about 1100 px. -->
+
+| Choose a photo and options | Progress | Result with before/after slider |
+|---|---|---|
+| ![The options screen with a photo chosen](docs/images/web-ui-options.png) | ![The progress screen with the step list](docs/images/web-ui-progress.png) | ![The result screen with the comparison slider](docs/images/web-ui-result.png) |
+
+### 5.2 The command line
 
 ```powershell
 python -m src.pipeline samples\my_photo.jpg
+python -m src.pipeline samples\my_photo.jpg --colorize always --upscale 2 --keep-steps
 ```
 
-Results go to `outputs\`: `restored_my_photo.png` and
-`restored_my_photo_comparison.png` (before on the left, after on the right).
-
----
-
-## 4. Using it
-
-### 4.1 The full pipeline
-
-```powershell
-python -m src.pipeline samples\my_photo.jpg --colorize always --upscale 2
-```
+Results go to `outputs\`: `restored_my_photo.png` and `restored_my_photo_comparison.png` (before on the left, after on the right). `--keep-steps` also saves the photo after each step.
 
 | Option | Values (default first) | Meaning |
 |---|---|---|
@@ -181,36 +202,156 @@ python -m src.pipeline samples\my_photo.jpg --colorize always --upscale 2
 | `--colorize` | `auto`, `always`, `never` | Whether to add colour |
 | `--saturation` | `1.0` (0.0 to 2.0) | Colour strength |
 | `--upscale` | `2` (1 = off, up to 4) | Enlargement factor |
-| `--upscale-model` | `auto`, `general`, `x4plus` | `general` is fast; `x4plus` looks better but is much slower on CPU |
+| `--upscale-model` | `auto`, `general`, `x4plus` | `general` is fast. `x4plus` looks better but is very slow on a CPU. |
 | `--faces` | `on`, `off` | Face restoration |
-| `--face-strength` | `0.6` (0.0 to 1.0) | 1.0 = fully restored faces, 0.0 = original |
-| `--contrast` | `auto`, `on`, `off` | Contrast restoration (`auto`: only for faded photos) |
-| `--grain` | `0.0` (0.0 to 1.0) | Cosmetic film grain; about 0.4 matches typical old-photo grain |
-| `--keep-steps` | flag | Also save the picture after each step |
+| `--face-strength` | `0.6` (0.0 to 1.0) | 1.0 = fully restored faces, 0.0 = the original |
+| `--contrast` | `auto`, `on`, `off` | Contrast restoration (`auto` only touches faded photos) |
+| `--grain` | `0.0` (0.0 to 1.0) | Cosmetic film grain. About 0.4 resembles typical old-photo grain. |
+| `--keep-steps` | flag | Save each intermediate picture |
 
-The run prints a live percentage and then a table with the status and time of
-every step, followed by plain-English notes. A black-and-white photo is
-colorized automatically. A photo that is a toned print (very little colour
-spread over different tints) is **not**, and you will get a note suggesting
-`--colorize always`.
+The `medium` repair level is deliberately not offered: on the test photo it hit the safety cap and silently repaired nothing.
 
-### 4.2 Single stages
+### 5.3 Single stages
 
-Each stage can be run alone, which is useful for judging what each one does:
+Each stage can run alone, which is useful for seeing what it does:
 
 | Command | What it does |
 |---|---|
 | `python -m src.image_io FILE` | Load and validate, print the file's details |
 | `python -m src.analysis FILE` | Colour type, noise, sharpness, contrast, face hint |
-| `python -m src.preprocessing FILE` | Working-size preview and a grayscale copy |
-| `python -m src.classical_restore FILE` | Grain and scratch repair; saves a mask of repaired pixels |
-| `python -m src.colorize FILE [--saturation X]` | DDColor |
+| `python -m src.classical_restore FILE` | Grain and scratch repair, with a mask of repaired pixels |
+| `python -m src.colorize FILE` | DDColor |
 | `python -m src.colorize_backup FILE [--chain]` | Backup colorizer, or DDColor with automatic fallback |
 | `python -m src.face_restore FILE [--strength X]` | GFPGAN faces |
 | `python -m src.super_resolution FILE [--scale X] [--model M]` | Real-ESRGAN |
 | `python -m src.postprocess FILE [--grain X] [--simulate-fade]` | Contrast and grain |
 
-### 4.3 Self-tests (no model weights needed)
+### 5.4 The API
+
+The website is a thin layer over a small HTTP API. An interactive page is at `http://127.0.0.1:8000/docs` (it loads its interface from a public CDN, so it needs an internet connection).
+
+| Method and path | Purpose |
+|---|---|
+| `GET /api/health` | Server status, device, which models are installed |
+| `GET /api/options` | Every option with allowed values and defaults, plus the pipeline steps |
+| `POST /api/jobs` | Upload a photo and options, returns a job id |
+| `GET /api/jobs/{id}` | Status, progress, step table, notes |
+| `POST /api/jobs/{id}/cancel` | Cancel a job (takes effect between steps) |
+| `DELETE /api/jobs/{id}` | Delete a finished job and its pictures |
+| `GET /api/jobs/{id}/result` | The restored picture (`?format=png\|jpeg`, `?download=1`) |
+| `GET /api/jobs/{id}/original` | The "before" picture at working size |
+
+```powershell
+curl.exe -F "file=@samples\my_photo.jpg" -F "upscale=2" http://127.0.0.1:8000/api/jobs
+curl.exe http://127.0.0.1:8000/api/jobs/JOB_ID
+curl.exe -o restored.png http://127.0.0.1:8000/api/jobs/JOB_ID/result
+```
+
+## 6. How it works
+
+```mermaid
+flowchart TB
+    subgraph Browser["Your browser"]
+        UI["frontend/<br/>index.html, style.css, app.js"]
+    end
+    subgraph Server["Python server (FastAPI, 127.0.0.1 only)"]
+        API["src/api/main.py<br/>endpoints, upload checks"]
+        JOBS["src/api/jobs.py<br/>one worker, in-memory jobs,<br/>temporary results"]
+        PIPE["src/pipeline.py<br/>the 7 steps"]
+    end
+    UI -- "upload + options" --> API
+    UI -- "poll progress, fetch result" --> API
+    API --> JOBS --> PIPE
+    PIPE --> M1["classical_restore<br/>(OpenCV)"]
+    PIPE --> M2["colorize, colorize_backup<br/>(PyTorch)"]
+    PIPE --> M3["super_resolution<br/>(Real-ESRGAN)"]
+    PIPE --> M4["face_restore<br/>(GFPGAN + facexlib)"]
+    PIPE --> M5["postprocess"]
+```
+
+The command line and the web app share the same pipeline, so they behave the same. The server runs **one job at a time** (the models are heavy) and keeps jobs in memory: no database, no Redis, no Docker.
+
+### Decisions backed by measurement
+
+These come from side-by-side tests on **one** heavily cracked portrait. Treat them as development observations, not general findings.
+
+| Question | What was observed | Decision |
+|---|---|---|
+| Restore faces before or after enlarging? | Faces first, then the fast enlarger: a glowing eye and plastic skin. Enlarging first, then pasting the 512-pixel restored face onto the enlarged photo: natural skin. | **Enlarge first, then paste faces** |
+| Which enlarging model by default? | The pasted face is identical with either model. The best model only improves clothing and hands, at about 15 to 20 times the compute on a CPU. | **Fast model by default**, best model optional |
+| Which repair level by default? | `low` removed the most prominent cracks and never touched the face. `medium` hit the safety cap and repaired nothing. | **"light" = low, "strong" = high**, no medium |
+| Face restoration strength | At 1.0 one eye got an invented different colour. At 0.6 both eyes were consistent and it still looked like the same person. | **Default 0.6** |
+| Post-processing | Contrast was already fine at every stage. Enlarging removed most grain (estimated grain level 4.8 down to 0.6 to 0.9). | Contrast fix only for faded photos. Grain is optional and off by default. |
+
+<!-- ADD IMAGE 6 of 8 (optional): save as docs/images/colorizers-compare.jpg
+     Content: the SAME grayscale photo colorized by DDColor (left) and by the backup model (right). -->
+<!-- ADD IMAGE 7 of 8 (optional): save as docs/images/face-strength.jpg
+     Content: a face crop at three settings: Original, strength 0.6, strength 1.0. -->
+<p align="center">
+  <img src="docs/images/colorizers-compare.jpg" alt="The same grayscale photo colorized by DDColor and by the backup model" width="600">
+  <img src="docs/images/face-strength.jpg" alt="A face at original, 0.6 and 1.0 restoration strength" width="600">
+</p>
+<p align="center"><em>TODO: caption, for example "Left: DDColor (main) and the smaller backup model, whose colours are about half as vivid on this photo. Right: face restoration at three strengths."</em></p>
+
+## 7. Performance
+
+Measured per stage on a 459 x 668 photo, **CPU only**. Machine: TODO: CPU model, RAM, Windows version.
+
+| Stage | Time | Note |
+|---|---|---|
+| DDColor: load (once per process) | 12 to 16 s | first colorization after starting |
+| DDColor: colorize | 9.5 to 10.7 s | |
+| Backup colorizer: load, colorize | 0.3 s, 1.3 s | |
+| Face models: load (once per process) | 2.6 to 3.8 s | |
+| Face restoration | 8.3 to 9.7 s | per face |
+| Enlarging 2x, fast model | 9.2 to 9.6 s | output 918 x 1336 |
+| **Whole pipeline, no colorizing** | **28 s** | includes loading the face and enlarging models |
+| **Whole pipeline, with colorizing** | **56 s** | includes 16 s of DDColor loading |
+
+A second photo in the same session skips the model loading. The best enlarging model (`x4plus`) takes minutes on a CPU. The GPU path is implemented but untested.
+
+## 8. Models and licenses
+
+| Component | Role | Code license | Notes |
+|---|---|---|---|
+| [DDColor](https://github.com/piddnad/DDColor) (ICCV 2023) | Main colorizer | Apache 2.0 | Weights hosted by the authors on ModelScope. The weights' own license was **not independently verified**. No checksum is known for this file. |
+| [Colorization, Zhang et al.](https://github.com/richzhang/colorization) (SIGGRAPH 2017) | Backup colorizer | BSD 2-Clause | Weights trained on ImageNet, hosted by the authors on S3, pinned by full SHA-256 |
+| [GFPGAN](https://github.com/TencentARC/GFPGAN) v1.4 | Face restoration | Apache 2.0 headline, **with third-party exceptions** | Its LICENSE lists StyleGAN2-derived code under NVIDIA's license (research or evaluation use only) and DFDNet-derived code under CC BY-NC-SA 4.0. **Treat GFPGAN and its weights as non-commercial.** Its code is deliberately not committed here. |
+| [facexlib](https://github.com/xinntao/facexlib) | Face detection and alignment | MIT | A small subset is included |
+| [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | Enlarging | BSD 3-Clause | `RRDBNet` comes from BasicSR (Apache 2.0) |
+| OpenCV, Pillow, NumPy, PyTorch, FastAPI | Libraries | their own open-source licenses | |
+
+Because one component is non-commercial, treat the whole combination as **for personal, educational and research use** unless you obtain legal advice.
+
+**Downloaded files** (sizes approximate):
+
+| File | Size | Source | Integrity check |
+|---|---|---|---|
+| `ddcolor/pytorch_model.pt` | 910 MB | ModelScope (DDColor authors) | loader verifies it fits the model; no checksum known |
+| `colorizer_backup/siggraph17-df00044c.pth` | 137 MB | authors' S3 bucket | SHA-256 |
+| `gfpgan/GFPGANv1.4.pth` | 350 MB | GitHub release | SHA-256 |
+| `facexlib/detection_Resnet50_Final.pth`, `parsing_parsenet.pth` | 110 MB, 85 MB | GitHub release | SHA-256 |
+| `realesrgan/RealESRGAN_x4plus.pth`, `realesr-general-x4v3.pth` | 67 MB, 5 MB | GitHub release | SHA-256 |
+
+No model comes from Hugging Face. Weights are not stored in Git.
+
+## 9. Engineering notes
+
+Decisions that shaped the code, and the reasons:
+
+- **No `basicsr` install.** It is hard to install and import on many setups. Only the network definitions that are needed are copied from the official repositories, pinned to a commit and checked against SHA-256 checksums, by the `scripts/setup_*.py` scripts. Small stand-ins replace the two or three helper functions they import.
+- **Checkpoints are verified, not trusted.** DDColor's own loader uses `strict=False`, which would silently give garbage colours from a mismatched file. Ours raises a clear error. Weights load in PyTorch's `weights_only` mode where possible.
+- **Upstream pitfalls avoided.** Real-ESRGAN's tiling leaves a black square when a tile fails (ours raises an error). GFPGAN v1.4's `weight` option has no effect (verified: identical output), so a real blend is implemented instead. Model output slightly outside 0 to 1 is clipped before conversion to bytes, because otherwise bright pixels wrap around to dark.
+- **Tile padding was measured, not copied.** Real-ESRGAN's default 10 pixels differed from the untiled result in 7% of pixels for the best model. 32 pixels brought that to under 1%.
+- **Dead links happen.** The original backup model's download address now answers 404. It was replaced by the authors' current PyTorch model, verified by full SHA-256.
+- **Graceful degradation.** A failing step is reported and skipped instead of aborting. A model out of GPU memory retries on the CPU.
+- **Web safety.** Server messages are inserted into the page as text, never as HTML. A strict Content-Security-Policy blocks inline scripts. Job ids are random 128-bit values. Uploaded file names are never used.
+- **Windows detail.** Python reads file types from the Windows registry, where `.js` is sometimes wrongly set to `text/plain` by other software. The server forces the right types, because the security headers would otherwise make the browser refuse to run the script.
+- **Self-tests can lie.** Several checks were found to pass vacuously during development and were rewritten so they test what they claim.
+
+## 10. Testing
+
+There is **no pytest suite yet**. Instead, every module has a built-in self-test that needs no model weights and ends with `all checks passed`:
 
 ```powershell
 python scripts\check_environment.py
@@ -227,167 +368,50 @@ python -m src.face_restore
 python -m src.super_resolution
 python -m src.postprocess
 python -m src.pipeline
+python -m src.api.main --self-test
 ```
 
-Each ends with `all checks passed` when healthy.
+The web page was also checked in a headless Chromium browser during development (file selection, drag and drop, a full job with live progress, the slider, cancel, error cases, a script-injection attempt, phone width and dark mode). That browser test script is **not included in this repository** yet. Real touch devices, Firefox and Safari are untested.
 
----
-
-## 5. What was measured, and what it decided
-
-### 5.1 Timings on the author's CPU-only Windows machine
-
-*AMD Ryzen 5 7530U RAM - 16GB* Measured per stage on a 459x668 photo:
-
-| Stage | Time | Source |
-|---|---|---|
-| DDColor: load model (once per process) | 28.1 s | measured |
-| DDColor: colorize | 56.1 s | measured |
-| Backup colorizer: load / colorize | 0.3 s / 1.3 s | measured |
-| Face models: load (once per process) | 2.6-3.8 s | measured |
-| Face restoration (1 face) | 8.3-9.7 s | measured |
-| Upscaling, small model, 2x (918x1336) | 9.6 s | measured |
-
-**The full pipeline's total time on this machine has not been recorded yet.**
-Adding the stages gives an estimate of roughly 35-50 s per photo once the models
-are loaded, plus about 15-20 s for loading them in a fresh process.
-
-### 5.2 Design decisions backed by measurement (one portrait, development sandbox)
-
-| Question | What was observed | Decision |
-|---|---|---|
-| Faces before or after upscaling? | Faces first, then the small upscaler: a glowing eye and plastic skin. Upscale first, then paste the 512 px GFPGAN face: natural skin | Upscale first, then paste faces |
-| Which upscaler by default? | The pasted face is identical with either model. The best model only improves fabric and hands, at roughly 15-20x the compute (single CPU thread: about 5 s vs about 66 s for a 0.1 megapixel photo) | Small model by default, best model optional |
-| Default repair level? | `low` removes the most prominent cracks and never touched the face. The `medium` level hit the safety cap and repaired nothing | "light" = `low`, "strong" = `high`; `medium` is not offered |
-| Face strength? | At 1.0 one eye received an invented different colour; 0.6 looked consistent and still like the same person | Default 0.6 |
-| Post-processing? | Contrast was already good at every stage (about 200 of 255). Upscaling removed most grain (estimated grain level 4.8 down to 0.6-0.9) | Contrast fix only for faded photos; grain optional and off by default |
-
-### 5.3 Engineering lessons
-
-- **No `basicsr` install.** It is hard to install and import on many setups. Only the
-  network definitions needed are copied from the official repositories, pinned
-  to a commit and checked against SHA-256 checksums.
-- **Checkpoints are verified, not trusted.** DDColor's own loader uses
-  `strict=False`, which would silently give garbage colours from a mismatched file.
-  Ours raises a clear error.
-- **Upstream pitfalls avoided:** Real-ESRGAN's tiling leaves a black square when a tile fails
-  (ours raises an error); GFPGAN v1.4's `weight` option has no effect (we verified
-  identical output, so we implemented a real blend instead); unclipped model output
-  wraps around when converted to bytes (all stages clip first).
-- **Dead download links happen.** The original backup model's address now answers 404; it
-  was replaced by the authors' current PyTorch model, verified by its full SHA-256.
-- **Self-tests can lie.** Several checks were found to pass vacuously during development
-  and were rewritten to test what they claim.
-
----
-
-## 6. Architecture and project structure
-
-Planned shape: the browser talks to a small Python server, which runs the
-pipeline. **Only the pipeline exists today.**
-
-```
-Browser (HTML/CSS/JS)                      [planned]
-   | upload + options
-   v
-FastAPI server -> background job           [planned]
-   |
-   v
-src/pipeline.py  (progress reporting, cancellation, graceful step failures)   [built]
-   |
-   v
-outputs/  ->  status polling  ->  before/after slider + download               [planned]
-```
+## 11. Project structure
 
 ```
 photo-restorer/
 |-- README.md  requirements.txt  .gitignore
+|-- docs/images/                    screenshots and example pictures used in this README
+|-- frontend/
+|   |-- index.html  style.css  app.js
 |-- scripts/
 |   |-- check_environment.py        environment health check
-|   |-- download_weights.py         download and verify weights (checksums)
+|   |-- download_weights.py         download and verify model weights
 |   |-- setup_ddcolor_code.py       DDColor model code
-|   |-- setup_face_code.py          GFPGAN (not committed) + facexlib code
+|   |-- setup_face_code.py          GFPGAN (not committed) and facexlib code
 |   |-- setup_upscaler_code.py      Real-ESRGAN network definitions
 |   `-- setup_backup_colorizer.py   backup colorizer code and weights
 |-- src/
-|   |-- config.py  logging_setup.py  image_io.py  analysis.py  preprocessing.py
-|   |-- device.py                   CPU/GPU selection, tile and size recommendations
+|   |-- config.py  logging_setup.py  image_io.py  analysis.py  preprocessing.py  device.py
 |   |-- classical_restore.py        grain and scratch repair
 |   |-- colorize.py                 DDColor
-|   |-- colorize_backup.py          backup colorizer + fallback chain
+|   |-- colorize_backup.py          backup colorizer and fallback chain
 |   |-- face_restore.py             GFPGAN
-|   |-- super_resolution.py         Real-ESRGAN with our own error-safe tiling
+|   |-- super_resolution.py         Real-ESRGAN with error-safe tiling
 |   |-- postprocess.py              contrast and grain
 |   |-- pipeline.py                 the complete pipeline and its command line
+|   |-- api/
+|   |   |-- main.py                 web API, serves the page
+|   |   `-- jobs.py                 background worker and job table
 |   `-- vendor/
-|       |-- ddcolor/  siggraph17/  facexlib/  realesrgan/   committed (permissive licenses)
-|       `-- gfpgan/                                         NOT committed (see section 7)
+|       |-- ddcolor/  siggraph17/  facexlib/  realesrgan/    committed (permissive licenses)
+|       `-- gfpgan/                                          NOT committed (see section 8)
 |-- samples/   your test images
 |-- models/    downloaded weights  (NOT in Git)
 |-- outputs/   results             (NOT in Git)
-`-- uploads/  logs/                created at runtime (NOT in Git)
+`-- logs/  uploads/                created at run time (NOT in Git; uploads/ is currently unused)
 ```
 
-Planned additions: `src/api/`, `frontend/`, `tests/`, `notebooks/`, `run.py`.
+## 12. Configuration
 
----
-
-## 7. Models and licenses
-
-| Component | Role | Code license | Notes |
-|---|---|---|---|
-| [DDColor](https://github.com/piddnad/DDColor) (ICCV 2023) | Main colorizer | Apache 2.0 | Weights hosted by the authors on ModelScope; the weights' own license was **not independently verified**. No checksum is known for this file. |
-| [Colorization, Zhang et al.](https://github.com/richzhang/colorization) (SIGGRAPH 2017) | Backup colorizer | BSD 2-Clause | Weights trained on ImageNet, hosted by the authors on S3, pinned by full SHA-256 |
-| [GFPGAN](https://github.com/TencentARC/GFPGAN) v1.4 | Face restoration | Apache 2.0 headline, **with third-party exceptions** | Its LICENSE lists StyleGAN2-derived code under NVIDIA's license (research or evaluation use only) and DFDNet-derived code under CC BY-NC-SA 4.0. **Treat GFPGAN and its weights as non-commercial.** Its code is deliberately not committed here. |
-| [facexlib](https://github.com/xinntao/facexlib) | Face detection and alignment | MIT | A small subset is vendored |
-| [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) | Upscaling | BSD 3-Clause | `RRDBNet` comes from BasicSR (Apache 2.0) |
-| OpenCV, Pillow, NumPy, PyTorch | Libraries | their own open-source licenses | |
-
-Because one component is non-commercial, treat the whole combination as
-**for personal, educational and research use** unless you obtain legal advice.
-
-**Hosting notes:** ModelScope servers are in China and downloads can be slow.
-No weights come from Hugging Face.
-
----
-
-## 8. Known limitations
-
-- **No website or API yet**, and no automated pytest suite.
-- **Very small evaluation.** One heavily damaged portrait; no quantitative
-  metrics. Thresholds (scratch detection, colour classification, contrast) are
-  untuned starting values.
-- **Repair is partial.** On the test photo it removed the longest cracks but
-  left the fine web of cracks and most cracks on the clothing. Filled areas look
-  smooth, there is orange speckle residue along some crack edges, and one dark
-  blotch appeared. A hypothesis (repair mask margin too small) is untested.
-- **The repair safety cap is crude.** It skips repair when more than 5% of the
-  picture is flagged. The test photo was flagged at 4.7%, just under the cap, so a
-  slightly more damaged photo would skip repair (the pipeline reports this).
-- **Toned prints are not auto-detected as black-and-white.** The test photo was
-  classified as colour (very little colour, but two different tints). Use
-  `--colorize always`.
-- **Colorization is a guess.** Colours are plausible, not historically accurate.
-  The backup colorizer is less colourful (on one photo, mean colourfulness 7.7
-  vs 16.0 for DDColor).
-- **Face restoration invents detail.** It can change features such as eye colour
-  (seen at strength 1.0), and it smooths skin.
-- **Upscaling enlarges damage too.** The small model gives a smooth, airbrushed
-  look; the best model is much slower on CPU.
-- **Contrast restoration** was tested only on an artificially faded copy. Real
-  fading (yellowing, uneven dye loss) may need more. Film grain is cosmetic.
-- **Untested:** the GPU path, non-Windows systems, real faded photos, photos with
-  many faces, inputs near the size limits.
-- **Limits:** photos are shrunk to a 1024 px working size on CPU; results are
-  capped at 4096 px; upscaling is limited to 4x.
-- With --colorize always on the test photo, DDColor produced a saturated orange patch on the dress and a strongly red background. Colorization changed noticeably between two runs on slightly different inputs, so treat it as unstable. Repair covered 3.5% of the photo and the main cracks remained.
-
----
-
-## 9. Configuration
-
-Defaults live in `src/config.py`. These can be overridden with environment
-variables (PowerShell example: `$env:PHOTO_MAX_UPLOAD_MB = "20"`):
+Defaults live in `src/config.py`. These can be overridden with environment variables (PowerShell example: `$env:PHOTO_MAX_UPLOAD_MB = "20"`):
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -396,69 +420,90 @@ variables (PowerShell example: `$env:PHOTO_MAX_UPLOAD_MB = "20"`):
 | `PHOTO_MAX_IMAGE_PIXELS` | 25,000,000 | Largest accepted image (about 5000 x 5000) |
 | `PHOTO_LOG_LEVEL` | INFO | DEBUG, INFO, WARNING or ERROR |
 | `PHOTO_DEVICE` | auto | `auto`, `cpu` or `cuda` |
+| `PHOTO_HOST`, `PHOTO_PORT` | 127.0.0.1, 8000 | Where the server listens (or use `--host` and `--port`) |
 
-Logs go to the console and to `logs\app.log` (rotating, about 1 MB each).
+Other limits: photos are shrunk to a 1024 pixel working size on a CPU, results are capped at 4096 pixels, enlarging is limited to 4 times, at most 5 photos can be queued or running, and results are deleted after one hour. Logs go to the console and to `logs\app.log`.
 
----
+## 13. Privacy and security
 
-## 10. Troubleshooting
+- **Your photos never leave your computer.** All models run locally. The website itself makes no requests to other sites. (The optional `/docs` page loads its interface from a public CDN, and model files are downloaded once during setup from the official hosts listed above.)
+- **There is no login.** The server listens on `127.0.0.1` only. Starting it on another address prints a warning. Do not expose it to a network you do not trust.
+- **Results are temporary:** deleted after one hour, when you delete them, and when the server stops. Leftovers from a crashed run are removed at the next start.
+- **Uploads are checked** by content: real image format, size, pixel count, corruption. The uploaded file name is never used.
+- **Errors are plain messages.** Internal details and paths go only to `logs\app.log`.
+
+## 14. Known limitations
+
+<!-- ADD IMAGE 8 of 8 (recommended): save as docs/images/limitations-cracks.jpg
+     Content: a zoomed before | after crop of a CRACK-HEAVY area, showing what remains after repair. -->
+<p align="center">
+  <img src="docs/images/limitations-cracks.jpg" alt="Zoomed crop of a cracked area before and after repair, showing remaining cracks" width="700">
+</p>
+<p align="center"><em>TODO: caption, for example "Zoomed crop: the long cracks are gone, but fine cracks remain and the filled areas look smooth."</em></p>
+
+- **Repair is partial.** On the test photo it removed the longest cracks but left the fine web of cracks and most cracks on the clothing. It cannot rebuild torn or missing areas.
+- **The detector cannot tell a crack from a real thin object.** On sharp, busy photos it wrongly flags about 1 to 3% of pixels (measured on four clean photos).
+- **The repair safety cap is crude.** Repair is skipped when more than 5% of the picture is flagged. The test photo was flagged at 3.5 to 4.7%, so a slightly more damaged photo would skip repair. The pipeline reports this in its notes.
+- **Colorization is unstable.** On one photo, two runs on slightly different inputs gave a brownish and a strongly red background, and in one run a saturated orange patch appeared on a dress. The cause is not isolated yet.
+- **Toned prints are not detected as black-and-white**, and are therefore not colorized automatically. Use Colorize: Always.
+- **Face restoration invents detail** and smooths skin. Very small or heavily damaged faces are restored poorly or skipped.
+- **Enlarging enlarges damage.** The fast model gives an airbrushed look. The best model is very slow without a GPU.
+- **Contrast restoration** was tested only on an artificially faded copy. Real fading (yellowing, uneven dye loss) may need more.
+- **Small evaluation:** a handful of photos, no quantitative metrics.
+- **Untested:** the GPU path, systems other than Windows, Firefox and Safari, touch devices, photos with many faces, and inputs near the size limits.
+- **Single user:** one worker, no login, localhost only.
+
+## 15. Troubleshooting
 
 | Problem | Likely cause | Fix |
 |---|---|---|
 | `No module named 'src'` | Wrong folder, or `python src\file.py` | Run from the project root with `python -m src.<module>` |
 | `No module named 'torch'` | PyTorch not installed | Step 3 of the quick start |
 | `Could not find a version that satisfies torch==2.1.2` | Python is not 3.11 | Recreate the venv with `py -3.11 -m venv .venv` |
-| `(.venv)` missing from the prompt | New terminal | `.venv\Scripts\Activate.ps1` |
+| `(.venv)` missing from the prompt | New terminal window | `.venv\Scripts\Activate.ps1` |
 | `The ... code is missing` | A setup script was not run | Run the `setup_*` script named in the message |
 | `... weights were not found` | Weights not downloaded | `python scripts\download_weights.py` |
-| `weights file is missing N expected entries` | Weights file does not match the model code | Delete that file, download again, and open an issue if it persists |
+| `weights file is missing N expected entries` | The file does not match the model code | Delete that file, download again, and open an issue if it persists |
 | `[MISMATCH]` in `--verify` | Corrupted file | Delete it and download again |
-| `CHECKSUM MISMATCH` in a setup script | Upstream file differs from the tested version | Nothing is installed; open an issue |
-| A step shows `failed` in the table | Missing weights or out of memory | Read the NOTE under the table; the run still produced a result |
-| `Not enough memory` | Less than about 3 GB free RAM | Close other programs, or use a smaller image |
-| ModelScope download is slow or fails | Server in China | Use the manual browser steps the script prints |
-| Slow runs | CPU-only processing | Expected; avoid `--upscale-model x4plus` on CPU |
+| Page shows "has to be opened through the restoration server" | The HTML file was opened directly | Start the server and use `http://127.0.0.1:8000` |
+| Status chip says "Missing models for: ..." | A weights file is missing | `python scripts\download_weights.py`. Those steps are skipped until then. |
+| "The server is busy" | Five photos are already queued | Wait or cancel some |
+| Port 8000 is in use | An old server is still running | `python -m src.api.main --port 8001` |
+| A step shows `failed` | Missing weights or out of memory | Read the note under the result and `logs\app.log`. The photo is still produced without that step. |
+| `Not enough memory` | Less than about 3 GB of free RAM | Close other programs or use a smaller photo |
+| Very slow runs | CPU-only processing | Expected. Avoid `--upscale-model x4plus` without a GPU. |
+| ModelScope download is slow or fails | The server is in China | Use the manual browser steps the script prints |
 
----
+## 16. Roadmap
 
-## 11. Roadmap
+Planned work, roughly in order:
 
-| # | Planned work |
-|---|---|
-| 16 | Evaluation on a set of varied photos (PSNR/SSIM on synthetic damage, side-by-side review); tuning of the scratch detector, repair cap and colour classifier |
-| 17 | FastAPI backend: upload, job, status, cancel, download |
-| 18-19 | Frontend: drag-and-drop, options, progress, before/after slider, download |
-| 20 | Error handling, logging and temporary-file cleanup for the web app |
-| 21 | pytest suite |
-| 22 | Performance tuning |
-| 23 | Launch script and packaging |
-| 24 | Final README with example images |
-| 25 | Optional free deployment (a fully free host is unlikely to have enough RAM; local use is the target) |
+- **Evaluation and tuning** on a varied set of photos: PSNR/SSIM on synthetic damage, side-by-side review, and revisiting the scratch detector, the repair cap and the colour classifier
+- **Investigate the colorization instability** (is it the input, the repair step, or the model?)
+- **A pytest suite**, including the browser checks
+- **Packaging:** a single launcher script and a one-step setup
+- **Example gallery** with a larger set of photos
+- **GPU testing** on real hardware
 
-Possible stretch goal: a learned scratch detector, which would address the
-repair limits above. Its license and dependencies would need checking first.
+A possible stretch goal is a learned scratch detector, which could address the repair limits above. Its license and dependencies would need checking first.
 
----
+## 17. Credits
 
-## 12. Git and GitHub notes
+Built on the work of others. Thank you to the authors:
 
-**Commit:** source code, `requirements.txt`, this README, small sample images
-(public domain or your own only), and the vendored folders under `src/vendor/`
-that are committed (`ddcolor`, `siggraph17`, `facexlib`, `realesrgan`).
+- **DDColor:** Xiaoyang Kang et al., "DDColor: Towards Photo-Realistic Image Colorization via Dual Decoders", ICCV 2023.
+- **Colorization:** Richard Zhang, Phillip Isola, Alexei A. Efros, "Real-Time User-Guided Image Colorization with Learned Deep Priors", SIGGRAPH 2017.
+- **GFPGAN:** Xintao Wang, Yu Li, Honglun Zhang, Ying Shan, "Towards Real-World Blind Face Restoration with Generative Facial Prior", CVPR 2021 (Tencent ARC).
+- **Real-ESRGAN:** Xintao Wang, Liangbin Xie, Chao Dong, Ying Shan, "Real-ESRGAN: Training Real-World Blind Super-Resolution with Pure Synthetic Data", ICCV Workshops 2021.
+- **ESRGAN / BasicSR** (the RRDB network): Xintao Wang et al. and the XPixelGroup BasicSR project.
+- **facexlib:** xinntao.
 
-**Never commit:** `.venv/`, `models/`, `outputs/`, uploads, logs, `.env` files,
-and `src/vendor/gfpgan/` (a `.gitignore` inside it already excludes it). Do not
-commit photos of private individuals to a public repository.
+Example photographs: TODO: credit the source and rights of every photo shown in this README.
 
-```powershell
-git add .
-git commit -m "Module N: short description"
-```
+Author: TODO: your name and a link to your GitHub or LinkedIn profile.
 
----
+## 18. License
 
-## 13. Credits and license
+TODO: choose a license for this repository's own code (for example MIT or Apache-2.0) and add a `LICENSE` file, then replace this paragraph with one line naming it.
 
-- **DDColor:** Xiaoyang Kang et al., ICCV 2023.
-- **Colorization:** Richard Zhang, Phillip Isola, Alexei A. Efros, SIGGRAPH 2017.
-- **GFPGAN:** Tencent ARC. **Real-ESRGAN, facexlib:** xinntao. **BasicSR:** XPixelGroup.
+Third-party code and models keep their own licenses, listed in [Models and licenses](#8-models-and-licenses). Because the face restoration model is non-commercial, the project as a whole should be used for personal, educational and research purposes.
