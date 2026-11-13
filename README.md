@@ -504,6 +504,6 @@ Author: TODO: your name and a link to your GitHub or LinkedIn profile.
 
 ## 18. License
 
-TODO: choose a license for this repository's own code (for example MIT or Apache-2.0) and add a `LICENSE` file, then replace this paragraph with one line naming it.
+The code written for this project (everything outside `src/vendor/`) is released under the [MIT License](LICENSE).
 
-Third-party code and models keep their own licenses, listed in [Models and licenses](#8-models-and-licenses). Because the face restoration model is non-commercial, the project as a whole should be used for personal, educational and research purposes.
+Third-party code keeps its own license, stored next to it in `src/vendor/`, and the downloaded models have their own terms (see [Models and licenses](#8-models-and-licenses)). Because the face restoration model (GFPGAN) is non-commercial, the project as a whole should be used for personal, educational and research purposes.
