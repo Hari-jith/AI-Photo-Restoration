@@ -15,7 +15,7 @@ Everything runs locally, on a CPU if you have no graphics card. There are **no p
      Content: ONE good before | after pair, side by side. Use a photo you have the rights to share.
      How to make it: see "Images to add" in the notes that came with this README. -->
 <p align="center">
-  <img src="docs/images/hero-before-after.jpg" alt="An old photograph before (left) and after (right) restoration" width="820">
+  <img src="docs/images/hero-before-after.png" alt="An old photograph before (left) and after (right) restoration" width="820">
 </p>
 <p align="center"><em>TODO: caption, for example "Left: original scan. Right: restored with the default settings. Photo: (source or credit)."</em></p>
 
