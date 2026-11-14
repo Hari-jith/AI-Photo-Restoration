@@ -290,7 +290,7 @@ These come from side-by-side tests on **one** heavily cracked portrait. Treat th
 <p align="center">
   <img src="docs/images/colorizers-compare.jpg" alt="The same grayscale photo colorized by DDColor and by the backup model" width="600">
 </p>
-<p align="center"><em>TODO: caption, for example "Left: DDColor (main) and the smaller backup model, whose colours are about half as vivid on this photo. Right: face restoration at three strengths."</em></p>
+<p align="center"><em>TODO: caption, for example "DDColor (main) and the smaller backup model, whose colours are about half as vivid on this photo."</em></p>
 
 ## 7. Performance
 
