@@ -289,7 +289,6 @@ These come from side-by-side tests on **one** heavily cracked portrait. Treat th
      Content: a face crop at three settings: Original, strength 0.6, strength 1.0. -->
 <p align="center">
   <img src="docs/images/colorizers-compare.jpg" alt="The same grayscale photo colorized by DDColor and by the backup model" width="600">
-  <img src="docs/images/face-strength.jpg" alt="A face at original, 0.6 and 1.0 restoration strength" width="600">
 </p>
 <p align="center"><em>TODO: caption, for example "Left: DDColor (main) and the smaller backup model, whose colours are about half as vivid on this photo. Right: face restoration at three strengths."</em></p>
 
